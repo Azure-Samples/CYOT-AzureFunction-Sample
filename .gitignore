@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Python
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+
+# Azure Functions local settings — may contain secrets; never commit.
+local.settings.json
+
+# Local JWE test keys / certificates — never commit private keys.
+scripts/.keys/
+*.pem
+*.pfx
+
+# Azure Functions build/runtime
+bin/
+obj/
+.azure/
+.python_packages/
+__pycache__/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
