@@ -5,6 +5,17 @@ import os
 import jwt
 from jwt import PyJWKClient
 
+# Cache one JWKS client per issuer tenant so signing keys are fetched once, not per request.
+_jwks_clients = {}
+
+
+def _jwks_client(tenant_id):
+    client = _jwks_clients.get(tenant_id)
+    if client is None:
+        client = PyJWKClient(f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys")
+        _jwks_clients[tenant_id] = client
+    return client
+
 
 def validate_token(authorization_header):
     """Returns (ok, reason, caller_object_id)."""
@@ -21,8 +32,7 @@ def validate_token(authorization_header):
 
     token = authorization_header[len("bearer "):].strip()
     try:
-        jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
-        signing_key = PyJWKClient(jwks_url).get_signing_key_from_jwt(token)
+        signing_key = _jwks_client(tenant_id).get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token,
             signing_key.key,

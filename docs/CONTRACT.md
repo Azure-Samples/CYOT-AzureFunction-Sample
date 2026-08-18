@@ -155,5 +155,5 @@ Every implementation ships tests covering at least:
    `encryptedDeliveryContext`, decryption failure, and an incomplete delivery context.
 7. JWE round-trip: a context encrypted with RSA-OAEP-256 + A256GCM decrypts to the expected
    `nonce` / `phoneNumber` / `message`, and the response echoes the `nonce`.
-8. `Evaluation` mode → 200 + nonce echo, nothing sent.
+8. `Evaluation` mode → 202 + nonce echo, nothing sent.
 9. Privacy: OTP code and phone never in logs or response body.

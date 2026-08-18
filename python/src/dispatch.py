@@ -61,7 +61,10 @@ class DispatchEngine:
         if shutter:
             return 200, {"status": "accepted", "shutterProcessed": True, "provider": provider_id, "channel": channel, "correlationId": dispatch.correlation_id, "messageId": dispatch.message_id, "requestId": request_id}
 
-        timeout_ms = int(self.env.get("ENDPOINT_TIMEOUT_MS") or DEFAULT_TIMEOUT_MS)
+        try:
+            timeout_ms = int(self.env.get("ENDPOINT_TIMEOUT_MS") or DEFAULT_TIMEOUT_MS)
+        except (TypeError, ValueError):
+            timeout_ms = DEFAULT_TIMEOUT_MS
         try:
             response = requests.request(
                 provider_request["method"],

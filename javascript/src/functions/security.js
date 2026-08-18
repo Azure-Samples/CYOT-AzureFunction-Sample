@@ -41,10 +41,14 @@ async function validateToken(request, context, requestId) {
 
     try {
         const { jwtVerify } = require('jose');
-        const issuer = `https://login.microsoftonline.com/${tenantId}/v2.0`;
+        // Accept both the v2 (login.microsoftonline.com/.../v2.0) and v1 (sts.windows.net/.../) issuers.
+        const issuers = [
+            `https://login.microsoftonline.com/${tenantId}/v2.0`,
+            `https://sts.windows.net/${tenantId}/`,
+        ];
         await jwtVerify(bearerToken, getJwks(tenantId), {
             audience,
-            issuer,
+            issuer: issuers,
             algorithms: ['RS256'],
         });
         return { ok: true };
