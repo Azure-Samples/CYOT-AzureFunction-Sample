@@ -10,8 +10,7 @@ venv/
 # Azure Functions local settings — may contain secrets; never commit.
 local.settings.json
 
-# Local JWE test keys / certificates — never commit private keys.
-scripts/.keys/
+# Keys / certificates — never commit private keys.
 *.pem
 *.pfx
 
