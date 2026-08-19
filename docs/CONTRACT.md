@@ -1,7 +1,11 @@
-# CYOT Function — Language-Agnostic Contract
+# External Phone Provider Function — Language-Agnostic Contract
 
 This is the **source of truth** every language implementation (`javascript/`, `dotnet/`, `python/`)
 must conform to. If an implementation disagrees with this document, the implementation is wrong.
+
+> **Naming.** "CYOT" (Choose Your Own Telecom) is the internal code name for this feature. It still
+> appears in wire-level identifiers that must not change — type names (`SendCyotOtpRequest`,
+> `CyotDeliveryContext`), the `CYOT_JWE_PRIVATE_KEY_PEM` app setting, and the caller's `User-Agent`.
 
 The design is intentionally simple: **one dispatch engine + drop-in provider adapters**. Adding a
 provider is adding one adapter file; adding a language is re-implementing this contract.

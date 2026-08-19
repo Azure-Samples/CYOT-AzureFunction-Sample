@@ -1,4 +1,4 @@
-# CYOT — Azure Function (delivery endpoint)
+# External Phone Provider — Azure Function (delivery endpoint)
 
 An Azure Function (Node.js) that receives an OTP dispatch request and forwards it to a telephony
 provider (**Infobip**, **Telesign**, **Sinch**, or **Soprano**).
@@ -29,7 +29,7 @@ func azure functionapp publish <your-function-app-name>
 
 ## Configuration
 
-CYOT is **plug-and-play by provider**. The **shared infrastructure** — token validation, dispatch,
+The endpoint is **plug-and-play by provider**. The **shared infrastructure** — token validation, dispatch,
 response normalization, message templating, and
 logging — is identical for every provider and needs no per-provider code. You **choose one provider**;
 the only provider-specific parts are its **adapter** (the outbound API call) and the **few settings** below.
@@ -155,7 +155,7 @@ The engine handles the rest — provider resolution, Key Vault credential fetch 
 
 ## Request contract
 
-`POST /api/SendOtp` — the SAS → CYOT delivery endpoint. The cleartext body is a routing envelope; the
+`POST /api/SendOtp` — the SAS → External Phone Provider delivery endpoint. The cleartext body is a routing envelope; the
 PII (phone + rendered message, which contains the passcode) is encrypted in a JWE. See
 [../docs/CONTRACT.md](../docs/CONTRACT.md) for the full contract.
 

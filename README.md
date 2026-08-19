@@ -1,4 +1,4 @@
-# CYOT Azure Function Sample
+# External Phone Provider — Azure Function Sample
 
 A provider-agnostic **OTP-delivery Azure Function** sample, implemented across multiple languages.
 Each language folder is a self-contained implementation of the **same design and the same

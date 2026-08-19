@@ -1,6 +1,6 @@
-# CYOT Function — C# (.NET isolated worker)
+# External Phone Provider Function — C# (.NET isolated worker)
 
-A C# implementation of the CYOT OTP-delivery Function, conforming to the shared
+A C# implementation of the External Phone Provider OTP-delivery Function, conforming to the shared
 [contract](../docs/CONTRACT.md). Same design as the [`javascript/`](../javascript/) version:
 one dispatch engine + drop-in provider adapters, env-provisioned config, secrets in Key Vault.
 

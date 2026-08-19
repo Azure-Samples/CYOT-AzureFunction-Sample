@@ -1,9 +1,9 @@
 # Customer Onboarding
 
-A high-level guide to setting up, securing, and deploying the CYOT OTP Function. The steps are the same
-for every language (`javascript/`, `dotnet/`, `python/`); only the build/run commands differ (see each
-language's README). All config keys, Key Vault secret names, and behaviors are defined once in
-[CONTRACT.md](CONTRACT.md).
+A high-level guide to setting up, securing, and deploying the External Phone Provider OTP Function. The
+steps are the same for every language (`javascript/`, `dotnet/`, `python/`); only the build/run commands
+differ (see each language's README). All config keys, Key Vault secret names, and behaviors are defined
+once in [CONTRACT.md](CONTRACT.md).
 
 ## 1. Pick a language and a provider
 

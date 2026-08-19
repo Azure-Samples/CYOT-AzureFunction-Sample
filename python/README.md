@@ -1,6 +1,6 @@
-# CYOT Function — Python (v2 model)
+# External Phone Provider Function — Python (v2 model)
 
-A Python implementation of the CYOT OTP-delivery Function, conforming to the shared
+A Python implementation of the External Phone Provider OTP-delivery Function, conforming to the shared
 [contract](../docs/CONTRACT.md). Same design as the [`javascript/`](../javascript/) and
 [`dotnet/`](../dotnet/) versions: one dispatch engine + drop-in provider adapters, env-provisioned
 config, secrets in Key Vault.
