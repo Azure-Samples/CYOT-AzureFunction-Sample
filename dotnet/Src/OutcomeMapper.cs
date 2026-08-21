@@ -1,7 +1,6 @@
 namespace Epp.Otp;
 
-// Maps a provider's parsed status to a normalized outcome, then to an HTTP status. Fail-closed:
-// an unknown/unmapped status is treated as Fail.
+// Maps a provider status to an outcome, then to an HTTP status. Fail-closed: unknown status is Fail.
 public static class OutcomeMapper
 {
     public static readonly string[] DefaultChannels = { "sms", "voice" };
@@ -18,7 +17,6 @@ public static class OutcomeMapper
         return manifest.ResponseMapping.TryGetValue("default", out var fallbackOutcome) ? fallbackOutcome : Outcome.Fail;
     }
 
-    // Continue 200, Block 403, StepUp 409; a Fail surfaces the provider's failure class.
     public static int ToHttpStatus(Outcome outcome, int providerHttpStatus) => outcome switch
     {
         Outcome.Continue => 200,

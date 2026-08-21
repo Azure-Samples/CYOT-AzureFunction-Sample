@@ -1,5 +1,5 @@
-"""The delivery pipeline, in request order: parse the cleartext SAS envelope, decrypt the JWE delivery
-context that carries the PII, then dispatch to the bound provider. Fail-closed."""
+"""Delivery pipeline: parse the cleartext SAS envelope, decrypt the JWE that carries the PII, then
+dispatch to the configured provider. Fail-closed — only a Continue outcome is "accepted"."""
 import base64
 import json
 import os
@@ -41,7 +41,6 @@ def resolve_outcome(manifest, parsed):
 
 
 def to_http_status(outcome, provider_http_status):
-    """A Fail surfaces the provider's failure class."""
     if outcome == CONTINUE:
         return 200
     if outcome == BLOCK:
@@ -59,7 +58,7 @@ def to_http_status(outcome, provider_http_status):
 
 
 class ProviderRegistry:
-    """One provider is active per deployment — selection is config, not routing."""
+    """One provider is active per deployment; request_provider is a test override."""
 
     def __init__(self, adapters):
         self._by_id = {adapter.manifest["id"].lower(): adapter for adapter in adapters}
@@ -73,7 +72,7 @@ class ProviderRegistry:
         return self.get(request_provider or os.environ.get("EPP_PROVIDER_NAME"))
 
 
-# Channel: 1=Sms, 2=Voice (0=Undefined). DeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
+# Channel: 1=Sms, 2=Voice. DeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
 CHANNEL_BY_CODE = {1: "sms", 2: "voice"}
 CHANNEL_BY_NAME = {"sms": 1, "voice": 2}
 MODE_LIVE = 1
@@ -84,7 +83,6 @@ MAX_JWE_LENGTH = 16384
 
 
 def _normalize_channel(channel):
-    """Accepts the int enum (1/2) or the string form ('sms'/'voice')."""
     if isinstance(channel, bool):
         return None
     if channel in CHANNEL_BY_CODE:
@@ -95,7 +93,6 @@ def _normalize_channel(channel):
 
 
 def _normalize_mode(mode):
-    """Accepts the int enum (1/2) or the string form ('live'/'evaluation')."""
     if isinstance(mode, bool):
         return None
     if mode in (MODE_LIVE, MODE_EVALUATION):
@@ -130,7 +127,6 @@ def parse_envelope(payload):
 
 
 def read_protected_header(compact_jwe):
-    """Reads the first segment without decrypting, so kid/alg/enc can be logged."""
     header_segment = compact_jwe.split(".")[0]
     header_segment += "=" * (-len(header_segment) % 4)
     return json.loads(base64.urlsafe_b64decode(header_segment))
@@ -144,7 +140,7 @@ def make_key_provider(env):
 
 
 def _assert_well_formed_jwe(compact_jwe):
-    # Reject oversized or malformed input before base64-decoding or allocating buffers.
+    # Reject oversized or malformed input before decoding or allocating buffers.
     if not isinstance(compact_jwe, str) or not compact_jwe:
         raise ValueError("malformed JWE")
     if len(compact_jwe) > MAX_JWE_LENGTH:
@@ -154,14 +150,13 @@ def _assert_well_formed_jwe(compact_jwe):
         raise ValueError("malformed JWE: expected five non-empty segments")
 
 
-# Imported once and reused: a per-delivery RSA import would land inside the response budget, and would
-# turn a bad key into a failure on every call instead of one obvious first failure.
+# Imported once: a per-delivery RSA import would sit inside the response budget.
 _key_cache = {}
 
 
 def _normalize_pem(value):
     """The setup script stores the key as base64 over the PEM so its newlines survive being carried as
-    a secret and then as an app setting, so accept either form."""
+    an app setting, so accept either form."""
     text = value if isinstance(value, str) else value.decode("utf-8")
     if "-----BEGIN" in text:
         return text
@@ -191,8 +186,7 @@ def decrypt_delivery_context(compact_jwe, key_provider):
 
 
 def _space_passcode_for_voice(message):
-    """A TTS engine reads 641895 as "six hundred forty-one thousand eight hundred ninety-five", which
-    no user can type. Spacing the digits makes it read them one at a time."""
+    """Left alone, TTS reads 641895 as "six hundred forty-one thousand...", which no user can type."""
     return re.sub(r"\b\d{4,8}\b", lambda m: " ".join(m.group(0)), message or "", count=1)
 
 

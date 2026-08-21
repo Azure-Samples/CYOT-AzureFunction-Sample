@@ -4,9 +4,8 @@
 
 'use strict';
 
-// Telesign provider: SMS via /v1/messaging, voice via /v1/voice (form-urlencoded).
-// Auth: HTTP Basic (customer_id:api_key), or a Bearer token in oauth2 mode.
-// Both customer_id and api_key come from Key Vault (rotate either by replacing the secret value — no redeploy).
+// Telesign: SMS /v1/messaging, voice /v1/voice, form-urlencoded.
+// Auth: HTTP Basic (customer_id:api_key) from Key Vault, or Bearer in oauth2 mode.
 
 const manifest = {
     id: 'telesign',
@@ -82,7 +81,6 @@ function parseResponse({ httpStatus, ok, json }) {
         providerStatusCode: status.code != null ? String(status.code) : null,
         providerStatusName: null,
         providerStatusDescription: status.description || null,
-        providerResponse: json,
     };
 }
 

@@ -1,11 +1,10 @@
 """Validates the Entra JWT when EPP_REQUIRE_AUTH=true (aud/issuer/JWKS, RS256).
-No-op pass-through otherwise."""
+No-op pass-through otherwise — Easy Auth is the primary gate; this is the backstop."""
 import os
 
 import jwt
 from jwt import PyJWKClient
 
-# Cache one JWKS client per issuer tenant so signing keys are fetched once, not per request.
 _jwks_clients = {}
 
 
@@ -51,8 +50,7 @@ def validate_token(authorization_header):
         if claims.get("iss") not in allowed_issuers:
             return False, "token validation failed", None
 
-        # Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
-        # configuration, so without this any app in the tenant could reach the endpoint.
+        # azp is the v2 caller claim, appid the v1 one.
         expected_client_id = os.environ.get("EPP_EXPECTED_CLIENT_ID")
         if expected_client_id and (claims.get("azp") or claims.get("appid")) != expected_client_id:
             return False, "unexpected caller", None

@@ -122,7 +122,7 @@ Set by provisioning. **Identical names across all languages.**
 | `EPP_PROVIDER_TIMEOUT_MS` | outbound call timeout (default 1500) |
 | `EPP_DECRYPTION_KEY_PEM` | RSA private key for JWE decryption — PEM, or **base64 over the PEM** as the setup script writes it. A **Key Vault reference** in Azure |
 | `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
-| `EPP_REQUIRE_AUTH` | `true` → validate the Entra token in-process (Easy Auth is the primary gate) |
+| `EPP_REQUIRE_AUTH` | `true` → validate the Entra token in-process. **Recommended `true` in every deployment**; Easy Auth is the primary gate, this is the backstop |
 | `EPP_EXPECTED_AUDIENCE` | v1 token `aud` — the identifier URI `api://{host}/{appId}` |
 | `EPP_EXPECTED_ISSUER` | v1 issuer `https://sts.windows.net/{tenantId}/` |
 | `EPP_TENANT_ID` | your Entra tenant id |
@@ -146,8 +146,10 @@ User* role). Never in code or config.
   appear only in the outbound provider request, which is the delivery itself). The single exception is
   `EPP_LOG_PLAINTEXT=true`, a **diagnostics-only** switch that logs the phone number, message, and
   passcode. It defaults to false and **must not be enabled in production**.
-- **Auth** — Easy Auth is the primary gate; `EPP_EXPECTED_CLIENT_ID` mismatches return `403`. When
-  `EPP_REQUIRE_AUTH=true`, also validate the Entra JWT in-process (audience = `EPP_EXPECTED_AUDIENCE`,
+- **Auth** — **Easy Auth must be ON** (`unauthenticatedClientAction=Return401`, `allowedApplications`
+  pinned to Microsoft's app); the trigger is `authLevel: anonymous`, so it is the primary gate.
+  `EPP_EXPECTED_CLIENT_ID` mismatches return `403`. Deployments should **also** set
+  `EPP_REQUIRE_AUTH=true` to validate the Entra JWT in-process (audience = `EPP_EXPECTED_AUDIENCE`,
   issuer tenant = `EPP_TENANT_ID`, RS256, JWKS). No-op pass-through when false (local dev).
 
 ---

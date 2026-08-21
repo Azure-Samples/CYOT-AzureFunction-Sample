@@ -4,12 +4,11 @@
 
 'use strict';
 
-// Endpoint security: optional inbound bearer-token validation — anonymous unless REQUIRE_AUTH=true,
-// which validates a Microsoft JWT (iss/aud/exp/RS256). 'jose' is lazy-loaded.
+// Optional inbound bearer-token validation: anonymous unless EPP_REQUIRE_AUTH=true, which validates
+// a Microsoft JWT (iss/aud/exp/RS256). Easy Auth is the primary gate; this is the backstop.
 
 const jwksByTenant = new Map();
 
-// Gets (and caches per issuer tenant) the remote JWKS used to verify inbound tokens.
 function getJwks(issuerTenantId) {
     if (!jwksByTenant.has(issuerTenantId)) {
         const { createRemoteJWKSet } = require('jose');
@@ -21,15 +20,12 @@ function getJwks(issuerTenantId) {
     return jwksByTenant.get(issuerTenantId);
 }
 
-// Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
-// configuration, so without this any app in the tenant could reach the endpoint.
-// azp is the v2 claim, appid the v1 one.
+// azp is the v2 caller claim, appid the v1 one.
 function isExpectedCaller(payload, expectedClientId) {
     if (!expectedClientId) return true;
     return (payload.azp || payload.appid) === expectedClientId;
 }
 
-// Validates the inbound bearer token when REQUIRE_AUTH is enabled (issuer, audience, expiry, RS256).
 async function validateToken(request, context, requestId) {
     if (String(process.env.EPP_REQUIRE_AUTH || 'false').toLowerCase() !== 'true') {
         return { ok: true, skipped: true };
@@ -49,8 +45,7 @@ async function validateToken(request, context, requestId) {
 
     try {
         const { jwtVerify } = require('jose');
-        // Accept both the v2 (login.microsoftonline.com/.../v2.0) and v1 (sts.windows.net/.../) issuers,
-        // unless EPP_EXPECTED_ISSUER pins one explicitly.
+        // Accept both the v2 and v1 issuer forms unless EPP_EXPECTED_ISSUER pins one.
         const issuers = process.env.EPP_EXPECTED_ISSUER
             ? [process.env.EPP_EXPECTED_ISSUER]
             : [

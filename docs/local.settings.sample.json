@@ -7,6 +7,7 @@
     "EPP_DECRYPTION_KEY_PEM": "<RSA private key: PEM, or base64 over the PEM as the setup script writes it; in Azure a Key Vault reference>",
     "EPP_ENCRYPTION_KEY_ID": "<expected JOSE kid>",
 
+    "_comment_auth": "Enable Easy Auth on the Function App (unauthenticatedClientAction=Return401, allowedApplications pinned to EPP_EXPECTED_CLIENT_ID) AND set EPP_REQUIRE_AUTH=true in any real deployment. false is for local func start only.",
     "EPP_REQUIRE_AUTH": "false",
     "EPP_EXPECTED_AUDIENCE": "api://<your-endpoint-host>/<appId>",
     "EPP_EXPECTED_CLIENT_ID": "25ec60fa-f18d-41a4-b398-50044c90ce13",

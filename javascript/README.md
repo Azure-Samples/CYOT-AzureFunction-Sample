@@ -9,9 +9,12 @@ provider (**Infobip**, **Telesign**, **Sinch**, or **Soprano**).
 - Provider secrets from **Azure Key Vault** (managed identity).
 - **Correlation id** propagated to the provider and echoed back.
 - **Shutter mode** — process the full path but do not send.
-- **Optional in-process token validation** — off by default; enable with `EPP_REQUIRE_AUTH=true`.
+- **Token validation** — Easy Auth is the primary gate; `EPP_REQUIRE_AUTH=true` adds an in-process backstop.
 
-> Token validation exists but is **off by default** — enable it in any real deployment (`EPP_REQUIRE_AUTH=true`).
+> **Turn Easy Auth ON.** The trigger is `authLevel: anonymous`, so App Service Authentication
+> (`unauthenticatedClientAction=Return401`, `allowedApplications` pinned to Microsoft's app) is what
+> keeps the endpoint closed. Set **`EPP_REQUIRE_AUTH=true`** as well in any real deployment — it is the
+> backstop if Easy Auth is ever misconfigured, and the only gate when running locally.
 
 ## Deploy
 
@@ -61,7 +64,7 @@ Key Vault and can be rotated there without a redeploy.
 | `EPP_DECRYPTION_KEY_PEM` | RSA private key PEM for JWE decryption — a **Key Vault reference** in Azure |
 | `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
 | `EPP_EXPECTED_CLIENT_ID` | caller `appid`/`azp` to admit; Easy Auth returns `403`, in-process validation returns `401` |
-| `EPP_REQUIRE_AUTH` | `true` to also validate the token in-process — enable in any real deployment |
+| `EPP_REQUIRE_AUTH` | **set `true` in any real deployment** — validates the token in-process as a backstop to Easy Auth |
 | `EPP_EXPECTED_AUDIENCE` | token `aud` (this endpoint's app registration appId) — required when `EPP_REQUIRE_AUTH=true` |
 | `EPP_TENANT_ID` | customer tenant id for issuer/JWKS — required when `EPP_REQUIRE_AUTH=true` |
 | `EPP_EXPECTED_ISSUER` | optional; pins a single issuer instead of accepting both v1 and v2 |
@@ -103,9 +106,8 @@ are all non-secret configuration; only the key/token **value** lives in Key Vaul
 | Key Vault secret `soprano-api-key` | API key (sent as the `X-MEMS-API-Key` header) |
 | Key Vault secret `soprano-api-id` | API ID (sent as the `X-MEMS-API-ID` header) |
 | `EPP_PROVIDER_ENDPOINT` | **required** — your MEMS API base `https://<your-mems-domain>/cgpapi` (per-customer; no default) |
-| `SOPRANO_SOURCE_ID` | provisioned source/sender endpoint id, app setting — Soprano requires a provisioned sender, sent as `endpoints:[{type,id}]` |
+| `EPP_PROVIDER_ACCOUNT_NAME` | the provisioned source/sender endpoint id — Soprano requires a provisioned sender, so a **numeric** value is sent as `endpoints:[{type,id}]`; a non-numeric one falls back to a free-text `source` |
 | `SOPRANO_SOURCE_TYPE` | provisioned source endpoint type, app setting (optional; default `1`) |
-| `SOPRANO_SENDER_ID` → `EPP_PROVIDER_ACCOUNT_NAME` | optional free-text sender, used only as a fallback when `SOPRANO_SOURCE_ID` is unset |
 
 > `EPP_PROVIDER_ENDPOINT` is the provider base URL for the one active provider (e.g. a sandbox host).
 

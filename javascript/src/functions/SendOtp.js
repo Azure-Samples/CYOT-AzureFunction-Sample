@@ -5,12 +5,8 @@
 'use strict';
 
 // POST /api/SendOtp — the SAS → External Phone Provider delivery endpoint. Validates the caller, parses
-// the cleartext routing envelope, decrypts the JWE delivery context (PII lives there), dispatches to the
-// provider, and echoes the nonce to prove decryption.
-//
-// Every line starts with [EPP], so a whole delivery can be pulled out of a noisy log with one filter:
-//   Log stream           : look for [EPP]
-//   Application Insights : traces | where message startswith "[EPP]" | order by timestamp asc
+// the cleartext routing envelope, decrypts the JWE delivery context, dispatches to the provider, and
+// echoes the nonce to prove decryption. Every line is tagged [EPP] so one filter pulls a whole delivery.
 
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
@@ -26,8 +22,7 @@ const { readConfig, missingSettings } = require('./config');
 
 const TAG = '[EPP]';
 
-// Easy Auth has already validated the token by the time this runs; this only records which identity
-// actually arrived, which is the first thing worth knowing when a delivery is refused.
+// Easy Auth has already validated the token by the time this runs; this records which identity arrived.
 function readCallerAppId(request) {
     const encoded = request.headers.get('x-ms-client-principal');
     if (!encoded) return undefined;
@@ -47,14 +42,8 @@ let pendingDelivery = Promise.resolve();
 const whenDelivered = () => pendingDelivery;
 
 // Microsoft allows 3.2 s for the whole call, so the provider is called after the response.
-function deliverInBackground(dispatch, envelope, evaluation, config, context, requestId) {
-    pendingDelivery = dispatchOtp(dispatch, {
-        tenantId: envelope.tenantId,
-        requestProvider: config.provider.name || undefined,
-        shutter: evaluation,
-        context,
-        requestId,
-    })
+function deliverInBackground(dispatch, evaluation, context, requestId) {
+    pendingDelivery = dispatchOtp(dispatch, { shutter: evaluation, context, requestId })
         .then(({ httpStatus, body }) => {
             context.log(`${TAG} provider result   : httpStatus=${httpStatus} outcome=${body.outcome || 'n/a'} providerStatus=${body.providerStatus || 'n/a'} providerMessageId=${body.providerMessageId || 'n/a'}`);
         })
@@ -128,8 +117,7 @@ app.http('SendOtp', {
 
             const correlationId = envelope.correlationId || headerCorrelationId || requestId;
 
-            // Surfaced rather than swallowed: the passcode expires before it can be used, so delivering
-            // it would only produce a failed sign-in and a support call.
+            // Surfaced rather than swallowed: the passcode expires before it can be used.
             if (envelope.ttlSeconds !== undefined && envelope.ttlSeconds <= 0) {
                 warn(`ttlSeconds is ${envelope.ttlSeconds}; the passcode has expired.`);
             }
@@ -138,7 +126,7 @@ app.http('SendOtp', {
             let delivery;
             try {
                 ({ header, context: delivery } = await decryptDeliveryContext(
-                    envelope.encryptedDeliveryContext, { config }));
+                    envelope.encryptedDeliveryContext, config));
             } catch (decryptError) {
                 error(`decryption failed: ${decryptError.message}`);
                 return { status: 400, jsonBody: { error: 'decryption_failed', correlationId, requestId } };
@@ -169,7 +157,7 @@ app.http('SendOtp', {
             const evaluation = envelope.mode === MODE.EVALUATION;
             const dispatch = contextToDispatch(delivery, envelope, clientRequestId);
 
-            deliverInBackground(dispatch, envelope, evaluation, config, context, requestId);
+            deliverInBackground(dispatch, evaluation, context, requestId);
 
             // Echoing the nonce is the whole contract: a 2xx without it is treated as a failed delivery
             // and Microsoft re-sends over its own telephony, so the user gets the code twice.

@@ -6,10 +6,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Epp.Otp;
 
-// The delivery pipeline, in request order: parse the cleartext SAS envelope, decrypt the JWE delivery
-// context that carries the PII, then dispatch to the bound provider. Fail-closed.
+// Delivery pipeline: parse the cleartext SAS envelope, decrypt the JWE that carries the PII, then
+// dispatch to the configured provider. Fail-closed — only a Continue outcome is "accepted".
 
-// The cleartext SAS routing envelope. PII lives in the encrypted JWE.
 public sealed record Envelope(
     string? Type,
     string? TenantId,
@@ -40,7 +39,6 @@ public static class EnvelopeParser
         int? Int(string name) =>
             payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
 
-        // channel/mode accept the int enum (1/2) or the string form ("sms"/"voice", "live"/"evaluation").
         int? Channel()
         {
             var code = Int("channel");
@@ -73,7 +71,7 @@ public static class EnvelopeParser
     }
 }
 
-// Decrypted JWE plaintext. Contains the PII: phone + the rendered message, which includes the passcode.
+// Decrypted JWE plaintext: phone + the rendered message, which includes the passcode.
 public sealed class DeliveryContext
 {
     [JsonPropertyName("nonce")] public string? Nonce { get; set; }
@@ -115,7 +113,7 @@ public sealed class JweDecryptor
 
     private static void AssertWellFormed(string compactJwe)
     {
-        // Reject oversized or malformed input before base64-decoding or allocating buffers.
+        // Reject oversized or malformed input before decoding or allocating buffers.
         if (string.IsNullOrEmpty(compactJwe))
             throw new InvalidOperationException("malformed JWE");
         if (compactJwe.Length > MaxJweLength)
@@ -126,9 +124,7 @@ public sealed class JweDecryptor
     }
 }
 
-// EPP_DECRYPTION_KEY_PEM is a Key Vault reference, so the runtime only ever sees the resolved PEM.
-// Imported once, because doing it per delivery would add an RSA import inside the response budget and
-// turn a bad key into a failure on every call.
+// Imported once: a per-delivery RSA import would sit inside the response budget.
 public sealed class EnvJweKeyProvider : IJweKeyProvider
 {
     private readonly IEnv _env;
@@ -152,8 +148,8 @@ public sealed class EnvJweKeyProvider : IJweKeyProvider
         return rsa;
     }
 
-    // The setup script stores the key as base64 over the PEM so its newlines survive being carried as a
-    // secret and then as an app setting, so accept either form.
+    // The setup script stores the key as base64 over the PEM so its newlines survive being carried as
+    // an app setting, so accept either form.
     private static string NormalizePem(string value) =>
         value.Contains("-----BEGIN", StringComparison.Ordinal)
             ? value

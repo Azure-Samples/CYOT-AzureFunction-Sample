@@ -5,8 +5,8 @@ using System.IdentityModel.Tokens.Jwt;
 
 namespace Epp.Otp;
 
-// Validates the Entra JWT when REQUIRE_AUTH=true (aud=EXPECTED_AUDIENCE, issuer tenant=ISSUER_TENANT_ID,
-// RS256 via JWKS). No-op pass-through when REQUIRE_AUTH is not "true".
+// Validates the Entra JWT when EPP_REQUIRE_AUTH=true (aud/issuer/JWKS, RS256). No-op pass-through
+// otherwise — Easy Auth is the primary gate; this is the backstop.
 public sealed class TokenValidator
 {
     private readonly JwtSecurityTokenHandler _handler = new();
@@ -15,8 +15,7 @@ public sealed class TokenValidator
 
     public TokenValidator(IEnv? env = null) => _env = env ?? new ProcessEnv();
 
-    // Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
-    // configuration, so without this any app in the tenant could reach the endpoint.
+    // azp is the v2 caller claim, appid the v1 one.
     public static bool IsExpectedCaller(string? callerAppId, string? expectedClientId) =>
         string.IsNullOrEmpty(expectedClientId)
         || string.Equals(callerAppId, expectedClientId, StringComparison.OrdinalIgnoreCase);

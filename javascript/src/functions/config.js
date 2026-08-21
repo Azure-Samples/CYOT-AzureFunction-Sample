@@ -4,12 +4,10 @@
 
 'use strict';
 
-// The settings the request handler itself needs. dispatch.js and security.js read their own settings
-// directly, so each module stays readable on its own; EPP_DECRYPTION_KEY_PEM is a Key Vault reference,
-// so the runtime only ever sees the resolved PEM and never calls Key Vault itself.
+// Settings the request handler needs. dispatch.js and security.js read their own directly.
 
-// Read per call so a settings change (or a test) is picked up without a cold start.
-function readConfig(env = process.env) {
+function readConfig() {
+    const env = process.env;
     return {
         decryptionKeyPem: env.EPP_DECRYPTION_KEY_PEM || '',
         expectedKeyId: env.EPP_ENCRYPTION_KEY_ID || '',

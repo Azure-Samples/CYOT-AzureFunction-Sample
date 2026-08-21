@@ -32,7 +32,7 @@ public sealed record ProviderManifest(string Id, AuthConfig Auth, IReadOnlyDicti
 
 public sealed record DispatchResult(int HttpStatus, object Body);
 
-// The env snapshot passed to adapters (mirrors the JS `env` argument).
+// The env snapshot passed to adapters.
 public interface IEnv { string? Get(string key); }
 
 public sealed class ProcessEnv : IEnv

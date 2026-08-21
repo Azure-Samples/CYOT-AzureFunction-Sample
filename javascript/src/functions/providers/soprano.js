@@ -4,9 +4,8 @@
 
 'use strict';
 
-// Soprano provider: Soprano Connect API (MEMS): POST {base}/messages/{sms|voice}; base is https://<mems_domain>/cgpapi.
-// Auth: X-MEMS-API-ID + X-MEMS-API-Key headers (both from Key Vault), or a Bearer JWT.
-// Sender is a provisioned source endpoint (SOPRANO_SOURCE_ID), not a free-text string. Verified live (HTTP 201, ENROUTE).
+// Soprano Connect (MEMS): POST {base}/messages/{sms|voice}, base https://<mems_domain>/cgpapi.
+// Auth: X-MEMS-API-ID + X-MEMS-API-Key, or a Bearer JWT. Verified live (HTTP 201, ENROUTE).
 
 const manifest = {
     id: 'soprano',
@@ -47,17 +46,14 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
         text: dispatch.message,
         clientReference: dispatch.correlationId || dispatch.messageId,
     };
-    // Sender: a provisioned source endpoint (endpoints:[{type,id}]) is what Soprano accepts; free-text source is a fallback.
-    // Soprano wants a provisioned source endpoint (endpoints:[{type,id}]), which is numeric. A
-    // non-numeric account name is sent as a free-text source instead.
+    // Soprano wants a provisioned (numeric) source endpoint; a non-numeric name goes as free-text source.
     const account = env.EPP_PROVIDER_ACCOUNT_NAME;
     if (account && /^\d+$/.test(account)) {
         body.endpoints = [{ type: Number(env.SOPRANO_SOURCE_TYPE || 1), id: Number(account) }];
     } else if (account) {
         body.source = account;
     }
-    // Voice: Soprano speaks the fully-rendered message via text-to-speech. `language` must be a full
-    // Nexmo voice code (e.g. en-US), not a bare `en`.
+    // `language` must be a full voice code (e.g. en-US), not a bare `en`.
     if (messageType === 'voice') {
         const voiceLanguage = env.SOPRANO_VOICE_LANGUAGE
             || (dispatch.locale && dispatch.locale.includes('-') ? dispatch.locale : 'en-US');
@@ -86,7 +82,6 @@ function parseResponse({ httpStatus, ok, json }) {
         providerMessageId: (payload.id != null ? String(payload.id) : null) || payload.messageId || null,
         providerStatusName: status,
         providerStatusDescription: payload.errorDescription || payload.statusText || payload.description || null,
-        providerResponse: json,
     };
 }
 

@@ -8,11 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace Epp.Otp;
 
 // HTTP trigger: POST /api/SendOtp — the SAS → External Phone Provider delivery endpoint. Validates the
-// caller, parses the cleartext routing envelope, decrypts the JWE delivery context (PII lives there),
-// dispatches to the provider, and echoes the nonce to prove decryption.
-//
-// Every line starts with [EPP], so a whole delivery can be pulled out of a noisy log with one filter:
-//   Application Insights : traces | where message startswith "[EPP]" | order by timestamp asc
+// caller, parses the cleartext routing envelope, decrypts the JWE delivery context, dispatches to the
+// provider, and echoes the nonce to prove decryption. Every line is tagged [EPP] so one filter pulls a
+// whole delivery.
 public sealed class SendOtp
 {
     private const string Tag = "[EPP]";
@@ -32,7 +30,7 @@ public sealed class SendOtp
         _log = log;
     }
 
-    // Easy Auth has already validated the token; this only records which identity actually arrived.
+    // Easy Auth has already validated the token; this records which identity arrived.
     private static string? ReadCallerAppId(HttpRequest req)
     {
         var encoded = req.Headers["x-ms-client-principal"].FirstOrDefault();
@@ -56,8 +54,7 @@ public sealed class SendOtp
         }
     }
 
-    // Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
-    // ninety-five", which no user can type. Spacing the digits makes it read them one at a time.
+    // Left alone, TTS reads 641895 as "six hundred forty-one thousand...", which no user can type.
     private static string? SpacePasscodeForVoice(string? message) =>
         string.IsNullOrEmpty(message) ? message : Regex.Replace(message, @"\b\d{4,8}\b", m => string.Join(" ", m.Value.ToCharArray()));
 
@@ -126,8 +123,7 @@ public sealed class SendOtp
 
             correlationId = envelope.CorrelationId ?? headerCorrelationId ?? requestId;
 
-            // Surfaced rather than swallowed: the passcode expires before it can be used, so delivering
-            // it would only produce a failed sign-in and a support call.
+            // Surfaced rather than swallowed: the passcode expires before it can be used.
             if (envelope.TtlSeconds is <= 0)
                 _log.LogWarning("{Tag} ttlSeconds is {Ttl}; the passcode has expired.", Tag, envelope.TtlSeconds);
 

@@ -29,13 +29,23 @@ in the encrypted JWE — see [CONTRACT.md](CONTRACT.md)). A **`200`** with the e
 (`{ "nonce": "<echo>", "correlationId": "<echo>", "providerStatus": "accepted" }`) means the provider
 **queued** it — delivery is asynchronous, so confirm via the provider's delivery report.
 
-## 5. Secure it — Easy Auth
+## 5. Secure it — turn Easy Auth ON
 
-App Service Authentication is the gate: set `unauthenticatedClientAction` to `Return401` and list
-Microsoft's application in `allowedApplications`, and anything else is rejected before your code runs.
-Where Easy Auth is not available, set **`EPP_REQUIRE_AUTH=true`** (plus `EPP_EXPECTED_AUDIENCE` and
-`EPP_TENANT_ID`) to validate the **Entra JWT** in-process instead. To test, obtain a token for the
-expected audience and confirm: no token → 401, valid token → 200.
+**Enable App Service Authentication (Easy Auth) on the Function App. This is the recommended posture and
+the primary gate** — the trigger itself is `authLevel: anonymous`, so with Easy Auth off the endpoint is
+open to the internet. Configure:
+
+- `unauthenticatedClientAction` = **`Return401`**
+- `allowedApplications` = Microsoft's CYOT application id (`EPP_EXPECTED_CLIENT_ID`)
+
+Anything else is then rejected before your code runs.
+
+**Also set `EPP_REQUIRE_AUTH=true`.** Easy Auth is configured outside the code, so a portal change, slot
+swap, or redeploy can silently drop it and nothing in the app would notice. In-process validation of the
+**Entra JWT** (plus `EPP_EXPECTED_AUDIENCE` and `EPP_TENANT_ID`) is the backstop that fails closed if that
+happens, and it is the only auth available when running locally with `func start`.
+
+To test, obtain a token for the expected audience and confirm: no token → 401, valid token → 200.
 
 ## 6. Deploy
 

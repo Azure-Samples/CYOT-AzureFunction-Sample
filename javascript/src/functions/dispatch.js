@@ -4,11 +4,8 @@
 
 'use strict';
 
-// The delivery pipeline, in request order: parse the cleartext SAS envelope, decrypt the JWE delivery
-// context that carries the PII, then dispatch to the bound provider. Each provider is a manifest +
-// adapter under ./providers/<id>.js; dispatchOtp resolves the provider, sends via its adapter with a
-// timeout, then maps the provider status to an outcome and an HTTP status. Fail-closed: only a
-// Continue outcome is "accepted".
+// Delivery pipeline: parse the cleartext SAS envelope, decrypt the JWE that carries the PII, then
+// dispatch to the configured provider. Fail-closed — only a Continue outcome is "accepted".
 
 const crypto = require('crypto');
 const { compactDecrypt } = require('jose');
@@ -16,11 +13,7 @@ const { ManagedIdentityCredential } = require('@azure/identity');
 const { SecretClient } = require('@azure/keyvault-secrets');
 const { readConfig } = require('./config');
 
-// ─── SAS envelope ────────────────────────────────────────────────────────────
-// The cleartext routing envelope (SendCyotOtpRequest on the wire) whose PII — phone + rendered
-// message, which contains the passcode — is encrypted in a JWE.
-
-// CyotChannel: 1=Sms, 2=Voice (0=Undefined). CyotDeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
+// CyotChannel: 1=Sms, 2=Voice. CyotDeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
 const CHANNEL_BY_CODE = Object.freeze({ 1: 'sms', 2: 'voice' });
 const CHANNEL_BY_NAME = Object.freeze({ sms: 1, voice: 2 });
 const MODE = Object.freeze({ LIVE: 1, EVALUATION: 2 });
@@ -38,7 +31,6 @@ function normalizeMode(mode) {
     return null;
 }
 
-// Validates + normalizes the cleartext envelope. Returns { envelope } or { error }.
 function parseEnvelope(payload) {
     if (!payload || typeof payload !== 'object') {
         return { error: 'invalid envelope' };
@@ -58,9 +50,8 @@ function parseEnvelope(payload) {
     return { envelope: { type, tenantId, correlationId, channel: channelCode, mode: modeCode, ttlSeconds, encryptedDeliveryContext } };
 }
 
-// ─── JWE delivery context ────────────────────────────────────────────────────
 
-// Reject oversized or structurally invalid JWEs before base64-decoding or allocating buffers.
+// Reject oversized or structurally invalid JWEs before decoding or allocating buffers.
 const MAX_JWE_LENGTH = 16384;
 
 function assertWellFormedJwe(compactJwe) {
@@ -76,19 +67,17 @@ function assertWellFormedJwe(compactJwe) {
     }
 }
 
-// Reads the JWE protected (first) segment without decrypting, so kid/alg/enc can be logged.
 function readProtectedHeader(compactJwe) {
     const protectedSegment = String(compactJwe).split('.')[0] || '';
     return JSON.parse(Buffer.from(protectedSegment, 'base64url').toString('utf8'));
 }
 
-// The key is imported once and reused: doing it per delivery would add an RSA import inside the
-// response budget and turn a bad key into a failure on every call instead of one obvious first failure.
+// Imported once: a per-delivery RSA import would sit inside the response budget.
 let cachedKey;
 let cachedKeyPem;
 
-// The setup script stores the key as base64 over the PEM so its newlines survive being carried as a
-// secret and then as an app setting, so accept either form.
+// The setup script stores the key as base64 over the PEM so its newlines survive being carried as an
+// app setting, so accept either form.
 function normalizePem(value) {
     const text = String(value || '');
     if (text.includes('-----BEGIN')) return text;
@@ -108,14 +97,12 @@ function loadPrivateKey(pem) {
 }
 
 // Decrypts the JWE compact serialization. Returns the protected header (for kid/alg logging) alongside
-// the CyotDeliveryContext. `keyProvider(kid)` is injectable so tests can supply a local key.
-async function decryptDeliveryContext(compactJwe, options = {}) {
-    const config = options.config || readConfig(options.env || process.env);
+// the CyotDeliveryContext.
+async function decryptDeliveryContext(compactJwe, config = readConfig()) {
     assertWellFormedJwe(compactJwe);
     const header = readProtectedHeader(compactJwe);
-    const pem = options.keyProvider ? await options.keyProvider(header.kid) : config.decryptionKeyPem;
-    const privateKey = loadPrivateKey(pem);
-    // Pin alg/enc so a tampered header can't downgrade the crypto (contract: RSA-OAEP-256 + A256GCM).
+    const privateKey = loadPrivateKey(config.decryptionKeyPem);
+    // Pin alg/enc so a tampered header can't downgrade the crypto.
     const { plaintext } = await compactDecrypt(compactJwe, privateKey, {
         keyManagementAlgorithms: ['RSA-OAEP-256'],
         contentEncryptionAlgorithms: ['A256GCM'],
@@ -123,14 +110,12 @@ async function decryptDeliveryContext(compactJwe, options = {}) {
     return { header, context: JSON.parse(Buffer.from(plaintext).toString('utf8')) };
 }
 
-// Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
-// ninety-five", which no user can type. Spacing the digits makes it read them one at a time.
+// Left alone, TTS reads 641895 as "six hundred forty-one thousand...", which no user can type.
 function spacePasscodeForVoice(message) {
     return String(message || '').replace(/\b\d{4,8}\b/, (digits) => digits.split('').join(' '));
 }
 
-// Maps the decrypted context + envelope onto the engine's dispatch shape. The message is pre-rendered
-// (already contains the passcode), so there is no separate code — the fields mirror CyotDeliveryContext.
+// The message is pre-rendered and already contains the passcode, so there is no separate code field.
 function contextToDispatch(context, envelope, messageId) {
     const channel = CHANNEL_BY_CODE[envelope.channel];
     return {
@@ -143,7 +128,6 @@ function contextToDispatch(context, envelope, messageId) {
     };
 }
 
-// ─── Shared constants ────────────────────────────────────────────────────────
 
 const OUTCOME = Object.freeze({
     CONTINUE: 'Continue',
@@ -177,10 +161,7 @@ const DEFAULTS = Object.freeze({
 
 const SECRET_CACHE_TIME_TO_LIVE_MILLISECONDS = 5 * 60 * 1000; // rotated secrets picked up within this window
 
-// ─── Provider registry ───────────────────────────────────────────────────────
-// Each ./providers/<id>.js exports { manifest, buildRequest, parseResponse }. Onboarding a provider is
-// a new file plus one line here — static so a broken provider fails at load, not mid-request.
-
+// Onboarding a provider is a new file plus one line here — static, so a broken provider fails at load.
 const providerRegistry = new Map(
     [
         require('./providers/infobip'),
@@ -197,28 +178,22 @@ function getProvider(providerId) {
     return providerId ? providerRegistry.get(String(providerId).toLowerCase()) || null : null;
 }
 
-// One provider is active per deployment — selection is config, not routing the endpoint performs.
+// One provider is active per deployment; the argument is a test override.
 function resolveProvider(requestProvider) {
-    const providerId = (requestProvider || process.env.EPP_PROVIDER_NAME || '').toLowerCase();
-    return getProvider(providerId);
+    return getProvider(requestProvider || process.env.EPP_PROVIDER_NAME);
 }
 
-// ─── Provider credentials (Key Vault via managed identity) ────────────────────────
-// The manifest carries only the secret's *name*; the value is read just-in-time and never logged.
-
+// The manifest carries only the secret's name; the value is read just-in-time and never logged.
 let keyVaultSecretClient = null;
 const secretCache = new Map();
 
 // The identity needs the Key Vault Secrets User role on the vault.
-function createManagedIdentityCredential() {
-    return process.env.AZURE_CLIENT_ID
-        ? new ManagedIdentityCredential(process.env.AZURE_CLIENT_ID)
-        : new ManagedIdentityCredential();
-}
-
 function getKeyVaultSecretClient() {
     if (!keyVaultSecretClient) {
-        keyVaultSecretClient = new SecretClient(process.env.KEY_VAULT_URL, createManagedIdentityCredential());
+        const credential = process.env.AZURE_CLIENT_ID
+            ? new ManagedIdentityCredential(process.env.AZURE_CLIENT_ID)
+            : new ManagedIdentityCredential();
+        keyVaultSecretClient = new SecretClient(process.env.KEY_VAULT_URL, credential);
     }
     return keyVaultSecretClient;
 }
@@ -241,33 +216,10 @@ async function resolveSecretValue(keyVaultSecretName) {
     return secretValue;
 }
 
-// Best-effort, so the first request doesn't pay the cold Key Vault cost. Never throws.
-async function warmUpSecretCache() {
-    if (!process.env.KEY_VAULT_URL) {
-        return;
-    }
-    const providerId = (process.env.EPP_PROVIDER_NAME || '').toLowerCase();
-    const providerEntry = providerId && getProvider(providerId);
-    const keyVaultSecretName = providerEntry && providerEntry.manifest.auth && providerEntry.manifest.auth.keyVaultSecretName;
-    if (!keyVaultSecretName) {
-        return;
-    }
-    try {
-        await resolveSecretValue(keyVaultSecretName);
-    } catch {
-        // ignore
-    }
-}
-
-async function resolveProviderCredential(authConfiguration = {}, options = {}) {
-    const authenticationMode = authConfiguration.mode || 'apiKey';
-
-    if (authenticationMode === 'oauth2') {
-        // oauth2 not wired end-to-end yet — no injected acquireProviderToken, so it fails closed.
-        let bearerToken = null;
-        if (typeof options.acquireProviderToken === 'function') {
-            bearerToken = await options.acquireProviderToken(options.channel);
-        }
+async function resolveProviderCredential(authConfiguration = {}, acquireProviderToken) {
+    if ((authConfiguration.mode || 'apiKey') === 'oauth2') {
+        // oauth2 is not wired end-to-end yet: with no injected acquireProviderToken it fails closed.
+        const bearerToken = typeof acquireProviderToken === 'function' ? await acquireProviderToken() : null;
         return { mode: 'oauth2', token: bearerToken };
     }
 
@@ -280,8 +232,6 @@ async function resolveProviderCredential(authConfiguration = {}, options = {}) {
     return { mode: 'apiKey', secret, identity };
 }
 
-// ─── Outcome mapping ─────────────────────────────────────────────────────────────
-
 // A recognized status wins; an unknown status is fail-closed; only a status-less response trusts HTTP.
 function resolveOutcome(manifest, parsedResponse) {
     const responseMapping = manifest.responseMapping || {};
@@ -292,7 +242,6 @@ function resolveOutcome(manifest, parsedResponse) {
     return parsedResponse.success ? OUTCOME.CONTINUE : (responseMapping.default || OUTCOME.FAIL);
 }
 
-// A Fail surfaces the provider's failure class — 429 rate-limit, 401 auth, 400 other 4xx, else 502.
 function outcomeToHttpStatus(outcome, providerHttpStatus) {
     switch (outcome) {
         case OUTCOME.CONTINUE:
@@ -310,8 +259,6 @@ function outcomeToHttpStatus(outcome, providerHttpStatus) {
             return HTTP_STATUS.BAD_GATEWAY;
     }
 }
-
-// ─── Sending ───────────────────────────────────────────────────────────────────
 
 
 async function fetchWithTimeout(providerRequest, timeoutMilliseconds) {
@@ -349,16 +296,15 @@ async function sendViaProvider(providerEntry, dispatch, options) {
     const providerId = manifest.id;
     const channel = (dispatch.channel || DEFAULTS.CHANNEL).toLowerCase();
 
-    if (!(manifest.channels || DEFAULTS.CHANNELS).includes(channel)) {
+    if (!DEFAULTS.CHANNELS.includes(channel)) {
         writeLog(`[DISPATCH_ERROR] requestId=${requestId} provider=${providerId} channel=${channel} not supported`);
         return { httpStatus: HTTP_STATUS.BAD_REQUEST, body: errorBody(providerId, `channel '${channel}' not supported`, requestId) };
     }
 
-    // Resolve the outbound credential; fail closed (502) if missing — this is our credential, not the
-    // caller's token. A declared identity secret is also required.
+    // Fail closed (502) if the credential is missing — this is our credential, not the caller's token.
     let credential = null;
     try {
-        credential = await resolveProviderCredential(manifest.auth, { channel, acquireProviderToken: options.acquireProviderToken });
+        credential = await resolveProviderCredential(manifest.auth, options.acquireProviderToken);
     } catch (error) {
         writeLog(`[DISPATCH_ERROR] requestId=${requestId} provider=${providerId} channel=${channel} credential error=${error.message}`);
     }
@@ -388,7 +334,6 @@ async function sendViaProvider(providerEntry, dispatch, options) {
 
     writeLog(`[DISPATCH] requestId=${requestId} provider=${providerId} channel=${channel} correlationId=${dispatch.correlationId} shutter=${!!shutter}`);
 
-    // Shutter mode: everything runs except the actual send.
     if (shutter) {
         writeLog(`[SHUTTER] requestId=${requestId} provider=${providerId} channel=${channel} processed but NOT sending`);
         return {
@@ -397,7 +342,6 @@ async function sendViaProvider(providerEntry, dispatch, options) {
         };
     }
 
-    // Endpoint timeout is a provisioned app setting (EPP_PROVIDER_TIMEOUT_MS).
     const timeoutMilliseconds = Number(process.env.EPP_PROVIDER_TIMEOUT_MS) || DEFAULTS.ENDPOINT_TIMEOUT_MILLISECONDS;
     let providerResponse;
     try {
@@ -414,15 +358,13 @@ async function sendViaProvider(providerEntry, dispatch, options) {
     try {
         responseJson = JSON.parse(responseText);
     } catch {
-        // Non-JSON body (e.g. an HTML error page): keep it raw so the adapter's parseResponse still runs.
+        // Keep a non-JSON body raw so the adapter's parseResponse still runs.
         responseJson = { raw: responseText };
     }
 
     const parsedResponse = adapter.parseResponse({
-        channel,
         httpStatus: providerResponse.status,
         ok: providerResponse.ok,
-        text: responseText,
         json: responseJson,
     });
     const outcome = resolveOutcome(manifest, parsedResponse);
@@ -447,7 +389,6 @@ async function sendViaProvider(providerEntry, dispatch, options) {
     };
 }
 
-// Public entry: resolve the provider, then send.
 async function dispatchOtp(dispatch, options) {
     const { requestProvider, context, requestId } = options;
     const writeLog = (logMessage) => context && context.log(logMessage);
@@ -463,9 +404,6 @@ async function dispatchOtp(dispatch, options) {
     return sendViaProvider(providerEntry, dispatch, options);
 }
 
-// Fire-and-forget warm-up at module load.
-warmUpSecretCache();
-
 module.exports = {
     parseEnvelope,
     decryptDeliveryContext,
@@ -473,4 +411,6 @@ module.exports = {
     MODE,
     dispatchOtp,
     getProvider,
+    resolveOutcome,
+    outcomeToHttpStatus,
 };

@@ -1,7 +1,6 @@
 namespace Epp.Otp;
 
-// Registry of provider adapters (keyed by lowercased id), and resolution of the active provider:
-// the request's Provider, else the deployment's EPP_PROVIDER_NAME. One provider active per deployment.
+// One provider is active per deployment; requestProvider is a test override.
 public sealed class ProviderRegistry
 {
     private readonly IReadOnlyDictionary<string, IProviderAdapter> _byId;

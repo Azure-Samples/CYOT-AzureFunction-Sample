@@ -46,21 +46,16 @@ test('fails (generic reason) on an invalid token', async () => {
 });
 
 // Easy Auth normally rejects the wrong caller at the platform; these cover the standalone path.
-test('caller check: unpinned client id accepts any caller', () => {
-    assert.equal(isExpectedCaller({ azp: 'anything' }, ''), true);
-});
-
-test('caller check: rejects an unexpected caller', () => {
-    assert.equal(isExpectedCaller({ azp: 'some-other-app' }, 'expected-app'), false);
-});
-
-test('caller check: rejects a token carrying no caller claim', () => {
-    assert.equal(isExpectedCaller({}, 'expected-app'), false);
-});
-
-test('caller check: accepts the v2 azp claim', () => {
-    assert.equal(isExpectedCaller({ azp: 'expected-app' }, 'expected-app'), true);
-});
+for (const [callerAppId, expected, allowed] of [
+    ['anything', '', true],              // unpinned client id accepts any caller
+    ['expected-app', 'expected-app', true],
+    ['some-other-app', 'expected-app', false],
+    [undefined, 'expected-app', false],  // token carrying no caller claim
+]) {
+    test(`caller check: appid=${callerAppId} expected=${expected || '(unpinned)'} -> ${allowed}`, () => {
+        assert.equal(isExpectedCaller({ azp: callerAppId }, expected), allowed);
+    });
+}
 
 test('caller check: accepts the v1 appid claim', () => {
     assert.equal(isExpectedCaller({ appid: 'expected-app' }, 'expected-app'), true);

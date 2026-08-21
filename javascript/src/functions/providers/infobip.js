@@ -4,13 +4,11 @@
 
 'use strict';
 
-// Infobip provider: SMS via /sms/3/messages, voice via /tts/3/advanced.
-// Auth: App API key (default) or a Bearer token (oauth2 mode). Voice is unverified.
+// Infobip: SMS /sms/3/messages, voice /tts/3/advanced (unverified). Auth: App API key, or Bearer in oauth2 mode.
 
 const manifest = {
     id: 'infobip',
     auth: { mode: 'apiKey', keyVaultSecretName: 'infobip-api-key' },
-    // Infobip status groups (groupName): ACCEPTED/PENDING/DELIVERED = success, REJECTED/EXPIRED/UNDELIVERABLE = fail.
     responseMapping: {
         ACCEPTED: 'Continue',
         PENDING: 'Continue',
@@ -64,7 +62,6 @@ function parseResponse({ httpStatus, ok, json }) {
         providerMessageId: (firstMessage && firstMessage.messageId) || null,
         providerStatusName: (status.groupName || status.name || '').toUpperCase() || null,
         providerStatusDescription: status.description || null,
-        providerResponse: json,
     };
 }
 

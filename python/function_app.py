@@ -1,9 +1,6 @@
-"""External Phone Provider OTP Function — Python v2 model. HTTP trigger: POST /api/SendOtp — the SAS →
-External Phone Provider delivery endpoint. Validates the caller, parses the cleartext routing envelope,
-decrypts the JWE delivery context (PII lives there), dispatches, and echoes the nonce to prove decryption.
-
-Every line starts with [EPP], so a whole delivery can be pulled out of a noisy log with one filter:
-    Application Insights : traces | where message startswith "[EPP]" | order by timestamp asc
+"""POST /api/SendOtp — the SAS → External Phone Provider delivery endpoint. Validates the caller, parses
+the cleartext routing envelope, decrypts the JWE delivery context, dispatches to the provider, and
+echoes the nonce to prove decryption. Every line is tagged [EPP] so one filter pulls a whole delivery.
 """
 import base64
 import json
@@ -28,7 +25,6 @@ from src.providers.infobip import InfobipProvider
 from src.providers.sinch import SinchProvider
 from src.providers.soprano import SopranoProvider
 from src.providers.telesign import TelesignProvider
-from src.registry import ProviderRegistry
 from src.secrets import SecretResolver
 from src.security import validate_token
 
@@ -51,7 +47,7 @@ def _log(label, value):
 
 
 def _read_caller_app_id(req):
-    """Easy Auth has already validated the token; this only records which identity actually arrived."""
+    """Easy Auth has already validated the token; this records which identity arrived."""
     encoded = req.headers.get("x-ms-client-principal")
     if not encoded:
         return None
@@ -113,8 +109,7 @@ def send_otp(req: func.HttpRequest) -> func.HttpResponse:
 
         correlation_id = envelope["correlation_id"] or header_correlation_id or request_id
 
-        # Surfaced rather than swallowed: the passcode expires before it can be used, so delivering it
-        # would only produce a failed sign-in and a support call.
+        # Surfaced rather than swallowed: the passcode expires before it can be used.
         ttl_seconds = envelope["ttl_seconds"]
         if isinstance(ttl_seconds, (int, float)) and not isinstance(ttl_seconds, bool) and ttl_seconds <= 0:
             logging.warning("%s ttlSeconds is %s; the passcode has expired.", TAG, ttl_seconds)

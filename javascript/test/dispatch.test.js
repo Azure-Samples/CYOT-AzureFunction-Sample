@@ -22,7 +22,7 @@ const providerSecrets = {
 const { SecretClient } = require('@azure/keyvault-secrets');
 mock.method(SecretClient.prototype, 'getSecret', async (name) => ({ value: providerSecrets[name] }));
 
-const { dispatchOtp, getProvider } = require('../src/functions/dispatch');
+const { dispatchOtp, getProvider, resolveOutcome, outcomeToHttpStatus } = require('../src/functions/dispatch');
 
 let resp;
 let sent;
@@ -55,7 +55,7 @@ for (const prov of ['infobip', 'telesign', 'sinch', 'soprano']) {
     for (const ch of ['sms', 'voice']) {
         test(`${prov}/${ch}: 200, message sent in body, https, provider auth scheme`, async () => {
             resp = { ok: true, status: 200, body: successBody[prov] };
-            const r = await dispatchOtp(disp({ channel: ch }), { tenantId: 't', requestProvider: prov, context: ctx, requestId: 'r' });
+            const r = await dispatchOtp(disp({ channel: ch }), { requestProvider: prov, context: ctx, requestId: 'r' });
             assert.equal(r.httpStatus, 200);
             assert.match(sent.url, /^https:\/\//);
             assert.ok(sent.opts.body.includes('918273'), 'rendered message missing from body');
@@ -68,66 +68,67 @@ for (const prov of ['infobip', 'telesign', 'sinch', 'soprano']) {
     }
 }
 
-test('Block outcome maps to 403', async () => {
-    resp = { ok: false, status: 200, body: { status: 'BLOCKED' } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'soprano', context: ctx, requestId: 'r' });
-    assert.equal(r.httpStatus, 403);
-});
+// Outcome + HTTP mapping is pure, so it is asserted directly here instead of once per case through
+// the whole dispatch pipeline (mirrors the .NET and Python contract tests).
+test('outcome mapping and HTTP status', () => {
+    const infobip = getProvider('infobip').manifest;
+    const soprano = getProvider('soprano').manifest;
+    const telesign = getProvider('telesign').manifest;
 
-test('Fail outcome maps to the provider HTTP status (400)', async () => {
-    resp = { ok: false, status: 400, body: { messages: [{ status: { name: 'REJECTED' } }] } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
-    assert.equal(r.httpStatus, 400);
-    assert.equal(r.body.outcome, 'Fail');
-});
+    assert.equal(resolveOutcome(infobip, { success: true, providerStatusName: 'DELIVERED' }), 'Continue');
+    assert.equal(resolveOutcome(infobip, { success: true, providerStatusName: 'REJECTED' }), 'Fail');
+    assert.equal(resolveOutcome(infobip, { success: true, providerStatusName: 'WATWAT' }), 'Fail');
+    assert.equal(resolveOutcome(soprano, { success: true, providerStatusName: 'BLOCKED' }), 'Block');
+    assert.equal(resolveOutcome(telesign, { success: true, providerStatusCode: '100' }), 'Continue');
 
-test('Fail with provider 429 maps to 429 (rate limit)', async () => {
-    resp = { ok: false, status: 429, body: { messages: [{ status: { name: 'REJECTED' } }] } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
-    assert.equal(r.httpStatus, 429);
-    assert.equal(r.body.outcome, 'Fail');
-});
-
-test('Fail with provider 401/403 maps to 401 (auth)', async () => {
-    resp = { ok: false, status: 403, body: { messages: [{ status: { name: 'REJECTED' } }] } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
-    assert.equal(r.httpStatus, 401);
-    assert.equal(r.body.outcome, 'Fail');
-});
-
-test('provider HTTP 200 with a REJECTED status still maps to Fail (not Continue)', async () => {
-    resp = { ok: true, status: 200, body: { messages: [{ status: { name: 'REJECTED' } }] } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
-    assert.equal(r.body.outcome, 'Fail');
-    assert.equal(r.body.status, 'failed');
-});
-
-test('provider HTTP 200 with a BLOCKED status maps to Block (403)', async () => {
-    resp = { ok: true, status: 200, body: { status: 'BLOCKED' } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'soprano', context: ctx, requestId: 'r' });
-    assert.equal(r.body.outcome, 'Block');
-    assert.equal(r.httpStatus, 403);
+    assert.equal(outcomeToHttpStatus('Continue', 200), 200);
+    assert.equal(outcomeToHttpStatus('Block', 200), 403);
+    assert.equal(outcomeToHttpStatus('StepUp', 200), 409);
+    assert.equal(outcomeToHttpStatus('Fail', 429), 429);
+    assert.equal(outcomeToHttpStatus('Fail', 403), 401);
+    assert.equal(outcomeToHttpStatus('Fail', 422), 400);
+    assert.equal(outcomeToHttpStatus('Fail', 500), 502);
 });
 
 test('endpoint timeout maps to 504', async () => {
     resp = 'TIMEOUT';
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
+    const r = await dispatchOtp(disp(), { requestProvider: 'infobip', context: ctx, requestId: 'r' });
     assert.equal(r.httpStatus, 504);
     assert.equal(r.body.outcome, 'Fail');
 });
 
 test('network error (non-timeout) maps to 502', async () => {
     resp = 'THROW';
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
+    const r = await dispatchOtp(disp(), { requestProvider: 'infobip', context: ctx, requestId: 'r' });
     assert.equal(r.httpStatus, 502);
     assert.equal(r.body.outcome, 'Fail');
 });
 
 test('unknown provider status fails closed even on HTTP 200 (§15)', async () => {
     resp = { ok: true, status: 200, body: { messages: [{ status: { name: 'WATWATWAT' } }] } };
-    const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', context: ctx, requestId: 'r' });
+    const r = await dispatchOtp(disp(), { requestProvider: 'infobip', context: ctx, requestId: 'r' });
     assert.equal(r.body.outcome, 'Fail');
     assert.equal(r.body.status, 'failed');
+});
+
+// The code and phone necessarily appear in the outbound provider request — that is the delivery.
+test('the code and phone never reach the logs or the response body', async () => {
+    const logs = [];
+    resp = { ok: true, status: 200, body: { messages: [{ status: { name: 'DELIVERED' }, messageId: 'x' }] } };
+    const r = await dispatchOtp(
+        { destination: '+15551234567', message: 'Your code is 918273', channel: 'sms', messageId: 'm', correlationId: 'c' },
+        { requestProvider: 'infobip', context: { log: (m) => logs.push(String(m)) }, requestId: 'r' },
+    );
+
+    assert.equal(r.httpStatus, 200);
+    assert.ok(sent.opts.body.includes('918273'), 'the rendered message IS sent to the provider');
+    for (const line of logs) {
+        assert.ok(!line.includes('918273'), `code leaked in a log line: ${line}`);
+        assert.ok(!line.includes('5551234567'), `phone leaked in a log line: ${line}`);
+    }
+    const body = JSON.stringify(r.body);
+    assert.ok(!body.includes('918273'), 'code leaked in response body');
+    assert.ok(!body.includes('5551234567'), 'phone leaked in response body');
 });
 
 test('apiKey mode fails closed when the secret is missing (502)', async () => {
@@ -135,7 +136,7 @@ test('apiKey mode fails closed when the secret is missing (502)', async () => {
     const saved = JSON.parse(JSON.stringify(manifest.auth));
     manifest.auth = { mode: 'apiKey', keyVaultSecretName: '__missing_secret__' };
     try {
-        const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'soprano', context: ctx, requestId: 'r' });
+        const r = await dispatchOtp(disp(), { requestProvider: 'soprano', context: ctx, requestId: 'r' });
         assert.equal(r.httpStatus, 502);
         assert.equal(r.body.reason, 'provider credential unavailable');
     } finally {
@@ -148,7 +149,7 @@ test('shutter returns 200 without sending', async () => {
     const orig = global.fetch;
     global.fetch = async (...a) => { calls++; return orig(...a); };
     try {
-        const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'infobip', shutter: true, context: ctx, requestId: 'r' });
+        const r = await dispatchOtp(disp(), { requestProvider: 'infobip', shutter: true, context: ctx, requestId: 'r' });
         assert.equal(r.httpStatus, 200);
         assert.equal(r.body.shutterProcessed, true);
         assert.equal(calls, 0);
@@ -167,10 +168,10 @@ test('oauth2 mode uses a Bearer token and fails closed without one', async () =>
     const saved = JSON.parse(JSON.stringify(manifest.auth));
     manifest.auth.mode = 'oauth2';
     try {
-        await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'sinch', context: ctx, requestId: 'r', acquireProviderToken: async () => 'TKN' });
+        await dispatchOtp(disp(), { requestProvider: 'sinch', context: ctx, requestId: 'r', acquireProviderToken: async () => 'TKN' });
         assert.equal(sent.opts.headers.Authorization, 'Bearer TKN');
 
-        const noToken = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'sinch', context: ctx, requestId: 'r' });
+        const noToken = await dispatchOtp(disp(), { requestProvider: 'sinch', context: ctx, requestId: 'r' });
         assert.equal(noToken.httpStatus, 502); // credential unavailable → 502, not 401
     } finally {
         manifest.auth = saved;
@@ -182,7 +183,7 @@ test('apiKey provider that needs an identity fails closed when the identity secr
     const saved = JSON.parse(JSON.stringify(manifest.auth));
     manifest.auth.identityKeyVaultSecretName = '__missing_identity__';
     try {
-        const r = await dispatchOtp(disp(), { tenantId: 't', requestProvider: 'telesign', context: ctx, requestId: 'r' });
+        const r = await dispatchOtp(disp(), { requestProvider: 'telesign', context: ctx, requestId: 'r' });
         assert.equal(r.httpStatus, 502);
         assert.equal(r.body.reason, 'provider credential unavailable');
     } finally {

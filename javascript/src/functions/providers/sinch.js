@@ -4,9 +4,8 @@
 
 'use strict';
 
-// Sinch provider: SMS via XMS Batches (POST /xms/v1/{plan}/batches, Bearer).
-// Voice via the Calling TTS callout API (best-effort; Sinch Voice usually uses app-signed auth).
-// Delivery status is async: XMS returns a batch/call id, not a final status.
+// Sinch: SMS via XMS batches, voice via the Calling TTS callout. XMS returns a batch id, not a final
+// delivery status — that arrives asynchronously by callback.
 
 const manifest = {
     id: 'sinch',
@@ -30,7 +29,7 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
     };
 
     if (channel === 'voice') {
-        // Sinch Voice uses its own host (and normally app-signed auth, not the XMS token — verify).
+        // Sinch Voice uses its own host and normally app-signed auth, not the XMS token — verify.
         const voiceBase = env.SINCH_VOICE_ENDPOINT || 'https://calling.api.sinch.com';
         const body = {
             method: 'ttsCallout',
@@ -63,7 +62,6 @@ function parseResponse({ httpStatus, ok, json }) {
         providerMessageId: typeof messageOrCallId === 'string' ? messageOrCallId : (messageOrCallId && messageOrCallId.href) || null,
         providerStatusName: ok ? 'Dispatched' : (json && (json.text || json.status)) || null,
         providerStatusDescription: (json && (json.text || json.detailedStatus)) || null,
-        providerResponse: json,
     };
 }
 
