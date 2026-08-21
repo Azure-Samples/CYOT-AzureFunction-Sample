@@ -197,8 +197,7 @@ function getProvider(providerId) {
     return providerId ? providerRegistry.get(String(providerId).toLowerCase()) || null : null;
 }
 
-// The request's Provider, else the deployment's EPP_PROVIDER_NAME (set by UX at provisioning). One
-// provider is active per deployment — selection is config, not routing the endpoint performs.
+// One provider is active per deployment — selection is config, not routing the endpoint performs.
 function resolveProvider(requestProvider) {
     const providerId = (requestProvider || process.env.EPP_PROVIDER_NAME || '').toLowerCase();
     return getProvider(providerId);
@@ -210,8 +209,7 @@ function resolveProvider(requestProvider) {
 let keyVaultSecretClient = null;
 const secretCache = new Map();
 
-// Key Vault is accessed via the Function's managed identity (user-assigned when AZURE_CLIENT_ID is set,
-// else system-assigned). The identity needs the Key Vault Secrets User role on the vault.
+// The identity needs the Key Vault Secrets User role on the vault.
 function createManagedIdentityCredential() {
     return process.env.AZURE_CLIENT_ID
         ? new ManagedIdentityCredential(process.env.AZURE_CLIENT_ID)
@@ -225,7 +223,6 @@ function getKeyVaultSecretClient() {
     return keyVaultSecretClient;
 }
 
-// Resolves a Key Vault secret name to its value (cached briefly so rotations are picked up).
 async function resolveSecretValue(keyVaultSecretName) {
     if (!keyVaultSecretName) {
         return '';
@@ -244,7 +241,7 @@ async function resolveSecretValue(keyVaultSecretName) {
     return secretValue;
 }
 
-// Best-effort warm-up at startup so the first request doesn't pay the cold Key Vault cost. Never throws.
+// Best-effort, so the first request doesn't pay the cold Key Vault cost. Never throws.
 async function warmUpSecretCache() {
     if (!process.env.KEY_VAULT_URL) {
         return;
@@ -262,7 +259,6 @@ async function warmUpSecretCache() {
     }
 }
 
-// Resolves the outbound credential from the manifest auth block: apiKey (secret [+identity]) or oauth2 (token).
 async function resolveProviderCredential(authConfiguration = {}, options = {}) {
     const authenticationMode = authConfiguration.mode || 'apiKey';
 
@@ -286,8 +282,7 @@ async function resolveProviderCredential(authConfiguration = {}, options = {}) {
 
 // ─── Outcome mapping ─────────────────────────────────────────────────────────────
 
-// Translates the provider's parsed status into a normalized outcome. A recognized status wins; an
-// unknown status is fail-closed; only a status-less response trusts the HTTP result.
+// A recognized status wins; an unknown status is fail-closed; only a status-less response trusts HTTP.
 function resolveOutcome(manifest, parsedResponse) {
     const responseMapping = manifest.responseMapping || {};
     const providerStatusKey = parsedResponse.providerStatusName || parsedResponse.providerStatusCode;
@@ -297,8 +292,7 @@ function resolveOutcome(manifest, parsedResponse) {
     return parsedResponse.success ? OUTCOME.CONTINUE : (responseMapping.default || OUTCOME.FAIL);
 }
 
-// Translates the outcome into the endpoint HTTP status. Continue 200, Block 403, StepUp 409; a Fail
-// surfaces the provider's failure class — 429 rate-limit, 401 auth (its 401/403), 400 other 4xx, else 502.
+// A Fail surfaces the provider's failure class — 429 rate-limit, 401 auth, 400 other 4xx, else 502.
 function outcomeToHttpStatus(outcome, providerHttpStatus) {
     switch (outcome) {
         case OUTCOME.CONTINUE:
@@ -319,7 +313,7 @@ function outcomeToHttpStatus(outcome, providerHttpStatus) {
 
 // ─── Sending ───────────────────────────────────────────────────────────────────
 
-// POSTs the provider request with a hard timeout; throws a descriptive error on timeout/network failure.
+
 async function fetchWithTimeout(providerRequest, timeoutMilliseconds) {
     const abortController = new AbortController();
     let timedOut = false;
