@@ -4,11 +4,9 @@
 
 'use strict';
 
-// Every setting the endpoint reads, in one place. Names are the EPP_* app settings provisioned on the
-// Function App; EPP_DECRYPTION_KEY_PEM is a Key Vault reference, so the runtime only ever sees the
-// resolved PEM and never calls Key Vault itself.
-
-const DEFAULT_TIMEOUT_MS = 1500;
+// The settings the request handler itself needs. dispatch.js and security.js read their own settings
+// directly, so each module stays readable on its own; EPP_DECRYPTION_KEY_PEM is a Key Vault reference,
+// so the runtime only ever sees the resolved PEM and never calls Key Vault itself.
 
 // Read per call so a settings change (or a test) is picked up without a cold start.
 function readConfig(env = process.env) {
@@ -24,8 +22,6 @@ function readConfig(env = process.env) {
         provider: {
             name: env.EPP_PROVIDER_NAME || '',
             endpoint: env.EPP_PROVIDER_ENDPOINT || '',
-            accountName: env.EPP_PROVIDER_ACCOUNT_NAME || '',
-            timeoutMs: Number(env.EPP_PROVIDER_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
         },
     };
 }

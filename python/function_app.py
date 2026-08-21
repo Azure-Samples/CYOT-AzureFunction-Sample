@@ -152,8 +152,11 @@ def send_otp(req: func.HttpRequest) -> func.HttpResponse:
         # Microsoft allows 3.2 s for the whole call, so the provider is called after the response.
         def _deliver():
             try:
-                status, _body = _engine.dispatch(dispatch, None, evaluation, request_id, logging)
-                logging.info("%s provider result   : httpStatus=%s correlationId=%s", TAG, status, correlation_id)
+                status, body = _engine.dispatch(dispatch, None, evaluation, request_id, logging)
+                logging.info(
+                    "%s provider result   : httpStatus=%s outcome=%s providerStatus=%s providerMessageId=%s correlationId=%s",
+                    TAG, status, body.get("outcome") or "n/a", body.get("providerStatus") or "n/a",
+                    body.get("providerMessageId") or "n/a", correlation_id)
             except Exception as delivery_error:
                 logging.error("%s provider delivery failed: %s", TAG, delivery_error)
 
