@@ -1,11 +1,18 @@
 """Conformance tests for the pure contract logic (see /docs/CONTRACT.md §6)."""
-from src.models import BLOCK, CONTINUE, FAIL, STEP_UP, DispatchRequest
-from src.outcome import resolve_outcome, to_http_status
+from src.dispatch import (
+    BLOCK,
+    CONTINUE,
+    FAIL,
+    STEP_UP,
+    DispatchRequest,
+    ProviderRegistry,
+    resolve_outcome,
+    to_http_status,
+)
 from src.providers.infobip import InfobipProvider
 from src.providers.telesign import TelesignProvider
 from src.providers.soprano import SopranoProvider
 from src.providers.sinch import SinchProvider
-from src.registry import ProviderRegistry
 
 
 def _dispatch(channel="sms", message=None):

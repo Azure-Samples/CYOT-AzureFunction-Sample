@@ -4,13 +4,11 @@ import json
 import pytest
 
 import src.dispatch as dispatch_module
-from src.dispatch import DispatchEngine
-from src.models import DispatchRequest
+from src.dispatch import DispatchEngine, DispatchRequest, ProviderRegistry
 from src.providers.infobip import InfobipProvider
 from src.providers.sinch import SinchProvider
 from src.providers.soprano import SopranoProvider
 from src.providers.telesign import TelesignProvider
-from src.registry import ProviderRegistry
 
 
 class FakeSecrets:

@@ -468,14 +468,9 @@ warmUpSecretCache();
 
 module.exports = {
     parseEnvelope,
-    readProtectedHeader,
-    loadPrivateKey,
     decryptDeliveryContext,
     contextToDispatch,
-    CHANNEL_BY_CODE,
     MODE,
     dispatchOtp,
     getProvider,
-    resolveSecretValue,
-    DEFAULTS,
 };

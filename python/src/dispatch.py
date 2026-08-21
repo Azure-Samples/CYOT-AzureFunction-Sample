@@ -4,15 +4,74 @@ import base64
 import json
 import os
 import re
+from dataclasses import dataclass
 
 import requests
 from jwcrypto import jwe as jwe_module
 from jwcrypto import jwk
 
-from .models import CONTINUE, DispatchRequest
-from .outcome import DEFAULT_CHANNELS, resolve_outcome, to_http_status
-
 DEFAULT_TIMEOUT_MS = 1500
+DEFAULT_CHANNELS = ["sms", "voice"]
+
+# Outcomes (mirrors the other languages).
+CONTINUE = "Continue"
+FAIL = "Fail"
+BLOCK = "Block"
+STEP_UP = "StepUp"
+
+
+@dataclass
+class DispatchRequest:
+    destination: str
+    message: str | None
+    channel: str
+    message_id: str
+    correlation_id: str | None
+    locale: str | None
+
+
+def resolve_outcome(manifest, parsed):
+    """A recognized status wins; an unknown status is fail-closed; only a status-less response
+    trusts the HTTP result."""
+    mapping = manifest["response_mapping"]
+    key = parsed.get("provider_status_name") or parsed.get("provider_status_code")
+    if key:
+        return mapping.get(key) or mapping.get("default", FAIL)
+    return CONTINUE if parsed.get("success") else mapping.get("default", FAIL)
+
+
+def to_http_status(outcome, provider_http_status):
+    """A Fail surfaces the provider's failure class."""
+    if outcome == CONTINUE:
+        return 200
+    if outcome == BLOCK:
+        return 403
+    if outcome == STEP_UP:
+        return 409
+    if outcome == FAIL:
+        if provider_http_status == 429:
+            return 429
+        if provider_http_status in (401, 403):
+            return 401
+        if 400 <= provider_http_status < 500:
+            return 400
+    return 502
+
+
+class ProviderRegistry:
+    """One provider is active per deployment — selection is config, not routing."""
+
+    def __init__(self, adapters):
+        self._by_id = {adapter.manifest["id"].lower(): adapter for adapter in adapters}
+
+    def get(self, provider_id):
+        if not provider_id:
+            return None
+        return self._by_id.get(provider_id.lower())
+
+    def resolve(self, request_provider):
+        return self.get(request_provider or os.environ.get("EPP_PROVIDER_NAME"))
+
 
 # Channel: 1=Sms, 2=Voice (0=Undefined). DeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
 CHANNEL_BY_CODE = {1: "sms", 2: "voice"}

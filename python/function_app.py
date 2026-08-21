@@ -18,6 +18,7 @@ import azure.functions as func
 from src.dispatch import (
     MODE_EVALUATION,
     DispatchEngine,
+    ProviderRegistry,
     context_to_dispatch,
     decrypt_delivery_context,
     make_key_provider,
