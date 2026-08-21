@@ -17,7 +17,6 @@
     "EPP_PROVIDER_ENDPOINT": "https://<provider-base-url>",
     "EPP_PROVIDER_ACCOUNT_NAME": "<your sender / source id>",
     "EPP_PROVIDER_TIMEOUT_MS": "1500",
-    "EPP_PROVIDER_RETRY_INTERVAL_MS": "0",
 
     "_comment_log_plaintext": "DIAGNOSTICS ONLY. true writes the phone number and passcode to the log. Never enable in production.",
     "EPP_LOG_PLAINTEXT": "false",

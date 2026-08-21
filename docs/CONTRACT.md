@@ -120,7 +120,6 @@ Set by provisioning. **Identical names across all languages.**
 | `EPP_PROVIDER_ENDPOINT` | provider base URL (one provider is active per deployment) |
 | `EPP_PROVIDER_ACCOUNT_NAME` | sender / source id presented to the provider |
 | `EPP_PROVIDER_TIMEOUT_MS` | outbound call timeout (default 1500) |
-| `EPP_PROVIDER_RETRY_INTERVAL_MS` | retry interval, reported at startup |
 | `EPP_DECRYPTION_KEY_PEM` | RSA private key for JWE decryption — PEM, or **base64 over the PEM** as the setup script writes it. A **Key Vault reference** in Azure |
 | `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
 | `EPP_REQUIRE_AUTH` | `true` → validate the Entra token in-process (Easy Auth is the primary gate) |

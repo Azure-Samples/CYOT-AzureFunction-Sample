@@ -58,7 +58,6 @@ Key Vault and can be rotated there without a redeploy.
 | `EPP_PROVIDER_ENDPOINT` | provider base URL (one provider is active per deployment) |
 | `EPP_PROVIDER_ACCOUNT_NAME` | sender / source id presented to the provider |
 | `EPP_PROVIDER_TIMEOUT_MS` | outbound provider-call timeout in ms (default `1500`) |
-| `EPP_PROVIDER_RETRY_INTERVAL_MS` | retry interval in ms (reported at startup) |
 | `EPP_DECRYPTION_KEY_PEM` | RSA private key PEM for JWE decryption — a **Key Vault reference** in Azure |
 | `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
 | `EPP_EXPECTED_CLIENT_ID` | caller `appid` Easy Auth should admit; a mismatch returns `403` |
