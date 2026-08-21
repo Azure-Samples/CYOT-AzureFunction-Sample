@@ -10,17 +10,26 @@ namespace Cyot.Otp;
 public sealed class TokenValidator
 {
     private readonly JwtSecurityTokenHandler _handler = new();
+    private readonly IEnv _env;
     private ConfigurationManager<OpenIdConnectConfiguration>? _configManager;
+
+    public TokenValidator(IEnv? env = null) => _env = env ?? new ProcessEnv();
+
+    // Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
+    // configuration, so without this any app in the tenant could reach the endpoint.
+    public static bool IsExpectedCaller(string? callerAppId, string? expectedClientId) =>
+        string.IsNullOrEmpty(expectedClientId)
+        || string.Equals(callerAppId, expectedClientId, StringComparison.OrdinalIgnoreCase);
 
     public sealed record Result(bool Ok, string? Reason = null, string? CallerObjectId = null);
 
     public async Task<Result> ValidateAsync(string? authorizationHeader)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("EPP_REQUIRE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(_env.Get("EPP_REQUIRE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
             return new Result(true);
 
-        var audience = Environment.GetEnvironmentVariable("EPP_EXPECTED_AUDIENCE");
-        var tenantId = Environment.GetEnvironmentVariable("EPP_TENANT_ID");
+        var audience = _env.Get("EPP_EXPECTED_AUDIENCE");
+        var tenantId = _env.Get("EPP_TENANT_ID");
         if (string.IsNullOrEmpty(audience) || string.IsNullOrEmpty(tenantId))
             return new Result(false, "auth misconfigured");
 
@@ -36,7 +45,7 @@ public sealed class TokenValidator
         {
             var config = await _configManager.GetConfigurationAsync();
             // EPP_EXPECTED_ISSUER pins one issuer; otherwise accept both the v2 and v1 forms.
-            var pinnedIssuer = Environment.GetEnvironmentVariable("EPP_EXPECTED_ISSUER");
+            var pinnedIssuer = _env.Get("EPP_EXPECTED_ISSUER");
             var validIssuers = string.IsNullOrEmpty(pinnedIssuer)
                 ? new[] { $"https://login.microsoftonline.com/{tenantId}/v2.0", $"https://sts.windows.net/{tenantId}/" }
                 : new[] { pinnedIssuer };
@@ -52,15 +61,9 @@ public sealed class TokenValidator
             };
             var principal = _handler.ValidateToken(token, parameters, out _);
 
-            // Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
-            // configuration, so without this any app in the tenant could reach the endpoint.
-            var expectedClientId = Environment.GetEnvironmentVariable("EPP_EXPECTED_CLIENT_ID");
-            if (!string.IsNullOrEmpty(expectedClientId))
-            {
-                var callerAppId = principal.FindFirst("azp")?.Value ?? principal.FindFirst("appid")?.Value;
-                if (!string.Equals(callerAppId, expectedClientId, StringComparison.OrdinalIgnoreCase))
-                    return new Result(false, "unexpected caller");
-            }
+            var callerAppId = principal.FindFirst("azp")?.Value ?? principal.FindFirst("appid")?.Value;
+            if (!IsExpectedCaller(callerAppId, _env.Get("EPP_EXPECTED_CLIENT_ID")))
+                return new Result(false, "unexpected caller");
 
             var oid = principal.FindFirst("oid")?.Value ?? principal.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
             return new Result(true, CallerObjectId: oid);

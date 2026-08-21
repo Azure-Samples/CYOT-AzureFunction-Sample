@@ -5,10 +5,12 @@ namespace Cyot.Otp;
 public sealed class ProviderRegistry
 {
     private readonly IReadOnlyDictionary<string, IProviderAdapter> _byId;
+    private readonly IEnv _env;
 
-    public ProviderRegistry(IEnumerable<IProviderAdapter> adapters)
+    public ProviderRegistry(IEnumerable<IProviderAdapter> adapters, IEnv? env = null)
     {
         _byId = adapters.ToDictionary(a => a.Manifest.Id.ToLowerInvariant(), a => a);
+        _env = env ?? new ProcessEnv();
     }
 
     public IProviderAdapter? Get(string? id)
@@ -21,7 +23,7 @@ public sealed class ProviderRegistry
     {
         var id = !string.IsNullOrWhiteSpace(requestProvider)
             ? requestProvider
-            : Environment.GetEnvironmentVariable("EPP_PROVIDER_NAME");
+            : _env.Get("EPP_PROVIDER_NAME");
         return Get(id);
     }
 }

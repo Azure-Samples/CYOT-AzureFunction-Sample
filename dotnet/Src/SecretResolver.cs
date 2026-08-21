@@ -12,13 +12,14 @@ public sealed class SecretResolver : ISecretResolver
     private readonly ConcurrentDictionary<string, (string Value, DateTimeOffset Expires)> _cache = new();
     private readonly Lazy<SecretClient?> _client;
 
-    public SecretResolver()
+    public SecretResolver(IEnv? env = null)
     {
+        var environment = env ?? new ProcessEnv();
         _client = new Lazy<SecretClient?>(() =>
         {
-            var url = Environment.GetEnvironmentVariable("KEY_VAULT_URL");
+            var url = environment.Get("KEY_VAULT_URL");
             if (string.IsNullOrWhiteSpace(url)) return null;
-            var clientId = Environment.GetEnvironmentVariable("AZURE_CLIENT_ID");
+            var clientId = environment.Get("AZURE_CLIENT_ID");
             var credential = string.IsNullOrEmpty(clientId)
                 ? new ManagedIdentityCredential()
                 : new ManagedIdentityCredential(clientId);

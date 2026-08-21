@@ -16,6 +16,23 @@ public class ContractTests
     private static DispatchRequest Disp(string channel = "sms", string? message = null) =>
         new("+15551234567", message, channel, "m", "c", null);
 
+    // Easy Auth normally rejects the wrong caller at the platform; these cover the standalone path.
+    [Theory]
+    [InlineData("anything", "", true)]           // unpinned client id accepts any caller
+    [InlineData("expected-app", "expected-app", true)]
+    [InlineData("EXPECTED-APP", "expected-app", true)] // Entra ids are case-insensitive
+    [InlineData("some-other-app", "expected-app", false)]
+    [InlineData(null, "expected-app", false)]    // token carrying no caller claim
+    public void CallerIsCheckedAgainstExpectedClientId(string? callerAppId, string expected, bool allowed) =>
+        Assert.Equal(allowed, TokenValidator.IsExpectedCaller(callerAppId, expected));
+
+    [Fact]
+    public void TokenValidationIsSkippedUnlessRequireAuthIsTrue()
+    {
+        var env = new FakeEnv { ["EPP_REQUIRE_AUTH"] = "false" };
+        Assert.True(new TokenValidator(env).ValidateAsync("Bearer whatever").Result.Ok);
+    }
+
     [Fact]
     public void OutcomeMappingAndHttpStatus()
     {
