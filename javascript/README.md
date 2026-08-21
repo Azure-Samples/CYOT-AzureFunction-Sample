@@ -60,7 +60,7 @@ Key Vault and can be rotated there without a redeploy.
 | `EPP_PROVIDER_TIMEOUT_MS` | outbound provider-call timeout in ms (default `1500`) |
 | `EPP_DECRYPTION_KEY_PEM` | RSA private key PEM for JWE decryption — a **Key Vault reference** in Azure |
 | `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
-| `EPP_EXPECTED_CLIENT_ID` | caller `appid` Easy Auth should admit; a mismatch returns `403` |
+| `EPP_EXPECTED_CLIENT_ID` | caller `appid`/`azp` to admit; Easy Auth returns `403`, in-process validation returns `401` |
 | `EPP_REQUIRE_AUTH` | `true` to also validate the token in-process — enable in any real deployment |
 | `EPP_EXPECTED_AUDIENCE` | token `aud` (this endpoint's app registration appId) — required when `EPP_REQUIRE_AUTH=true` |
 | `EPP_TENANT_ID` | customer tenant id for issuer/JWKS — required when `EPP_REQUIRE_AUTH=true` |

@@ -21,6 +21,14 @@ function getJwks(issuerTenantId) {
     return jwksByTenant.get(issuerTenantId);
 }
 
+// Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
+// configuration, so without this any app in the tenant could reach the endpoint.
+// azp is the v2 claim, appid the v1 one.
+function isExpectedCaller(payload, expectedClientId) {
+    if (!expectedClientId) return true;
+    return (payload.azp || payload.appid) === expectedClientId;
+}
+
 // Validates the inbound bearer token when REQUIRE_AUTH is enabled (issuer, audience, expiry, RS256).
 async function validateToken(request, context, requestId) {
     if (String(process.env.EPP_REQUIRE_AUTH || 'false').toLowerCase() !== 'true') {
@@ -49,11 +57,16 @@ async function validateToken(request, context, requestId) {
                 `https://login.microsoftonline.com/${tenantId}/v2.0`,
                 `https://sts.windows.net/${tenantId}/`,
             ];
-        await jwtVerify(bearerToken, getJwks(tenantId), {
+        const { payload } = await jwtVerify(bearerToken, getJwks(tenantId), {
             audience,
             issuer: issuers,
             algorithms: ['RS256'],
         });
+
+        if (!isExpectedCaller(payload, process.env.EPP_EXPECTED_CLIENT_ID)) {
+            context.log(`[AUTH_FAIL] requestId=${requestId} reason=unexpected caller appid=${payload.azp || payload.appid || 'none'}`);
+            return { ok: false, reason: 'unexpected caller' };
+        }
         return { ok: true };
     } catch (error) {
         context.log(`[AUTH_FAIL] requestId=${requestId} reason=${error.message}`);
@@ -61,4 +74,4 @@ async function validateToken(request, context, requestId) {
     }
 }
 
-module.exports = { validateToken };
+module.exports = { validateToken, isExpectedCaller };

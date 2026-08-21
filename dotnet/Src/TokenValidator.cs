@@ -51,6 +51,17 @@ public sealed class TokenValidator
                 ValidateIssuerSigningKey = true,
             };
             var principal = _handler.ValidateToken(token, parameters, out _);
+
+            // Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
+            // configuration, so without this any app in the tenant could reach the endpoint.
+            var expectedClientId = Environment.GetEnvironmentVariable("EPP_EXPECTED_CLIENT_ID");
+            if (!string.IsNullOrEmpty(expectedClientId))
+            {
+                var callerAppId = principal.FindFirst("azp")?.Value ?? principal.FindFirst("appid")?.Value;
+                if (!string.Equals(callerAppId, expectedClientId, StringComparison.OrdinalIgnoreCase))
+                    return new Result(false, "unexpected caller");
+            }
+
             var oid = principal.FindFirst("oid")?.Value ?? principal.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value;
             return new Result(true, CallerObjectId: oid);
         }

@@ -50,6 +50,13 @@ def validate_token(authorization_header):
         )
         if claims.get("iss") not in allowed_issuers:
             return False, "token validation failed", None
+
+        # Easy Auth's allowedApplications does this at the platform, but it is off in the standalone
+        # configuration, so without this any app in the tenant could reach the endpoint.
+        expected_client_id = os.environ.get("EPP_EXPECTED_CLIENT_ID")
+        if expected_client_id and (claims.get("azp") or claims.get("appid")) != expected_client_id:
+            return False, "unexpected caller", None
+
         return True, None, claims.get("oid")
     except Exception:
         return False, "token validation failed", None

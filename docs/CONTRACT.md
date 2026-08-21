@@ -126,7 +126,7 @@ Set by provisioning. **Identical names across all languages.**
 | `EPP_EXPECTED_AUDIENCE` | v1 token `aud` — the identifier URI `api://{host}/{appId}` |
 | `EPP_EXPECTED_ISSUER` | v1 issuer `https://sts.windows.net/{tenantId}/` |
 | `EPP_TENANT_ID` | your Entra tenant id |
-| `EPP_EXPECTED_CLIENT_ID` | caller `appid` Easy Auth should admit — Microsoft's app `25ec60fa-f18d-41a4-b398-50044c90ce13`; a mismatch returns `403` |
+| `EPP_EXPECTED_CLIENT_ID` | caller `appid`/`azp` to admit — Microsoft's app `25ec60fa-f18d-41a4-b398-50044c90ce13`. Enforced by Easy Auth (`403`) and, when `EPP_REQUIRE_AUTH=true`, against the token's own claim (`401`) |
 | `EPP_LOG_PLAINTEXT` | **diagnostics only** — `true` writes the phone number and passcode to the log. Never enable in production |
 | `KEY_VAULT_URL` | Key Vault URI (provider API keys) |
 | `AZURE_CLIENT_ID` | set for a user-assigned managed identity |
