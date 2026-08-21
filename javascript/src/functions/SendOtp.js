@@ -35,12 +35,6 @@ function readCallerAppId(request) {
     }
 }
 
-// Lifts the passcode out of the rendered sentence, purely so it is easy to eyeball in the log.
-function extractPasscode(message) {
-    const match = /\b\d{4,8}\b/.exec(message || '');
-    return match ? match[0] : undefined;
-}
-
 const pad = (label) => label.padEnd(18, ' ');
 
 // The handler deliberately does not await the provider, so tests need a handle on the send it started.
@@ -157,7 +151,6 @@ app.http('SendOtp', {
                 log('extension', delivery.extension || '(none)');
                 log('locale', delivery.locale);
                 log('message', delivery.message);
-                log('passcode', extractPasscode(delivery.message) || '(none found)');
                 log('riskContext', delivery.riskContext ? JSON.stringify(delivery.riskContext) : '(none)');
             } else {
                 context.log(`${TAG} plaintext suppressed (EPP_LOG_PLAINTEXT=false)`);

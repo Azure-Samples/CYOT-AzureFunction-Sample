@@ -56,14 +56,10 @@ public sealed class SendOtp
         }
     }
 
-    // Lifts the passcode out of the rendered sentence, purely so it is easy to eyeball in the log.
-    private static string? ExtractPasscode(string? message) =>
-        string.IsNullOrEmpty(message) ? null : Regex.Match(message, @"\b\d{4,8}\b") is { Success: true } m ? m.Value : null;
-
     // Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
     // ninety-five", which no user can type. Spacing the digits makes it read them one at a time.
     private static string? SpacePasscodeForVoice(string? message) =>
-        string.IsNullOrEmpty(message) ? message : Regex.Replace(message, @"\b\d{4,8}\b", m => string.Join(" ", m.Value.ToCharArray()), RegexOptions.None);
+        string.IsNullOrEmpty(message) ? message : Regex.Replace(message, @"\b\d{4,8}\b", m => string.Join(" ", m.Value.ToCharArray()));
 
     [Function("SendOtp")]
     public async Task<IActionResult> Run(
@@ -161,7 +157,6 @@ public sealed class SendOtp
                 Log("extension", context.Extension ?? "(none)");
                 Log("locale", context.Locale);
                 Log("message", context.Message);
-                Log("passcode", ExtractPasscode(context.Message) ?? "(none found)");
                 Log("riskContext", context.RiskContext.HasValue ? context.RiskContext.Value.ToString() : "(none)");
             }
             else

@@ -9,7 +9,6 @@ import base64
 import json
 import logging
 import os
-import re
 import threading
 import time
 import uuid
@@ -63,12 +62,6 @@ def _read_caller_app_id(req):
     except Exception:
         return None
     return None
-
-
-def _extract_passcode(message):
-    """Lifts the passcode out of the rendered sentence, purely so it is easy to eyeball in the log."""
-    match = re.search(r"\b\d{4,8}\b", message or "")
-    return match.group(0) if match else None
 
 
 @app.route(route="SendOtp", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
@@ -144,7 +137,6 @@ def send_otp(req: func.HttpRequest) -> func.HttpResponse:
             _log("extension", delivery.get("extension") or "(none)")
             _log("locale", delivery.get("locale"))
             _log("message", delivery.get("message"))
-            _log("passcode", _extract_passcode(delivery.get("message")) or "(none found)")
             _log("riskContext", json.dumps(delivery["riskContext"]) if delivery.get("riskContext") else "(none)")
         else:
             logging.info("%s plaintext suppressed (EPP_LOG_PLAINTEXT=false)", TAG)
