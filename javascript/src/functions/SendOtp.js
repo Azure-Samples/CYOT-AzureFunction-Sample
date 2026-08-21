@@ -15,8 +15,13 @@
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
 const { validateToken } = require('./security');
-const { dispatchOtp } = require('./dispatch');
-const { parseEnvelope, decryptDeliveryContext, contextToDispatch, MODE } = require('./cyot');
+const {
+    dispatchOtp,
+    parseEnvelope,
+    decryptDeliveryContext,
+    contextToDispatch,
+    MODE,
+} = require('./dispatch');
 const { readConfig, missingSettings } = require('./config');
 
 const TAG = '[EPP]';
