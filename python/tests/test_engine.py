@@ -48,10 +48,7 @@ _DEFAULT_SECRETS = {
     "soprano-api-key": "sp", "soprano-api-id": "spid",
 }
 _DEFAULT_ENV = {
-    "INFOBIP_ENDPOINT": "https://api.infobip.com",
-    "TELESIGN_ENDPOINT": "https://rest-api.telesign.com",
-    "SOPRANO_ENDPOINT": "https://mems.example.com/cgpapi",
-    "SINCH_ENDPOINT": "https://sms.api.sinch.com",
+    "EPP_PROVIDER_ENDPOINT": "https://api.infobip.com",
 }
 
 

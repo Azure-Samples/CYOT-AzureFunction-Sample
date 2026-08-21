@@ -31,12 +31,14 @@ class SopranoProvider:
         body = {"messageType": message_type, "destination": dispatch.destination, "clientReference": client_reference}
 
         # Sender: a provisioned source endpoint is what Soprano accepts; free-text source is a fallback.
-        source_id = env.get("SOPRANO_SOURCE_ID")
-        if source_id:
+        # Soprano wants a provisioned source endpoint (endpoints:[{type,id}]), which is numeric. A
+        # non-numeric account name is sent as a free-text source instead.
+        account = env.get("EPP_PROVIDER_ACCOUNT_NAME")
+        if account and str(account).isdigit():
             source_type = int(env.get("SOPRANO_SOURCE_TYPE") or 1)
-            body["endpoints"] = [{"type": source_type, "id": int(source_id)}]
-        elif env.get("SOPRANO_SENDER_ID"):
-            body["source"] = env.get("SOPRANO_SENDER_ID")
+            body["endpoints"] = [{"type": source_type, "id": int(account)}]
+        elif account:
+            body["source"] = account
 
         if message_type == "voice":
             locale = dispatch.locale or ""

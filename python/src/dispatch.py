@@ -62,7 +62,7 @@ class DispatchEngine:
             return 200, {"status": "accepted", "shutterProcessed": True, "provider": provider_id, "channel": channel, "correlationId": dispatch.correlation_id, "messageId": dispatch.message_id, "requestId": request_id}
 
         try:
-            timeout_ms = int(self.env.get("ENDPOINT_TIMEOUT_MS") or DEFAULT_TIMEOUT_MS)
+            timeout_ms = int(self.env.get("EPP_PROVIDER_TIMEOUT_MS") or DEFAULT_TIMEOUT_MS)
         except (TypeError, ValueError):
             timeout_ms = DEFAULT_TIMEOUT_MS
         try:
@@ -113,12 +113,8 @@ class DispatchEngine:
         return {"mode": "apiKey", "secret": secret, "identity": identity}
 
     def _resolve_endpoint(self, manifest):
-        id_upper = manifest["id"].upper()
-        use_eudb = (self.env.get("EUDB") or "").lower() == "true"
-        eudb_endpoint = self.env.get(f"{id_upper}_ENDPOINT_EUDB")
-        if use_eudb and eudb_endpoint:
-            return eudb_endpoint
-        return self.env.get(f"{id_upper}_ENDPOINT")
+        # One provider is active per deployment, so the endpoint is a single EPP_PROVIDER_ENDPOINT.
+        return self.env.get("EPP_PROVIDER_ENDPOINT")
 
     def _fail_body(self, provider, channel, reason, dispatch, request_id):
         return {"status": "failed", "outcome": "Fail", "provider": provider, "channel": channel, "reason": reason, "correlationId": dispatch.correlation_id, "messageId": dispatch.message_id, "requestId": request_id}

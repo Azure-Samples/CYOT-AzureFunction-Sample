@@ -1,4 +1,4 @@
-"""Validates the Entra JWT when REQUIRE_AUTH=true (aud/issuer/JWKS, RS256).
+"""Validates the Entra JWT when EPP_REQUIRE_AUTH=true (aud/issuer/JWKS, RS256).
 No-op pass-through otherwise."""
 import os
 
@@ -19,11 +19,11 @@ def _jwks_client(tenant_id):
 
 def validate_token(authorization_header):
     """Returns (ok, reason, caller_object_id)."""
-    if (os.environ.get("REQUIRE_AUTH") or "").lower() != "true":
+    if (os.environ.get("EPP_REQUIRE_AUTH") or "").lower() != "true":
         return True, None, None
 
-    audience = os.environ.get("EXPECTED_AUDIENCE")
-    tenant_id = os.environ.get("ISSUER_TENANT_ID")
+    audience = os.environ.get("EPP_EXPECTED_AUDIENCE")
+    tenant_id = os.environ.get("EPP_TENANT_ID")
     if not audience or not tenant_id:
         return False, "auth misconfigured", None
 
@@ -41,8 +41,12 @@ def validate_token(authorization_header):
             options={"verify_iss": False},
         )
         allowed_issuers = (
-            f"https://login.microsoftonline.com/{tenant_id}/v2.0",
-            f"https://sts.windows.net/{tenant_id}/",
+            (os.environ.get("EPP_EXPECTED_ISSUER"),)
+            if os.environ.get("EPP_EXPECTED_ISSUER")
+            else (
+                f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+                f"https://sts.windows.net/{tenant_id}/",
+            )
         )
         if claims.get("iss") not in allowed_issuers:
             return False, "token validation failed", None

@@ -60,8 +60,7 @@ public class EngineTests
 
     private static FakeEnv DefaultEnv() => new()
     {
-        ["INFOBIP_ENDPOINT"] = "https://api.infobip.com",
-        ["TELESIGN_ENDPOINT"] = "https://rest-api.telesign.com",
+        ["EPP_PROVIDER_ENDPOINT"] = "https://api.infobip.com",
     };
 
     private static DispatchEngine Engine(HttpResponseMessage? response = null, Exception? throwOnSend = null,

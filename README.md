@@ -25,16 +25,16 @@ and deploying, step by step.
 
 `POST /api/SendOtp` → validate token → resolve provider → fetch secret from Key Vault (managed
 identity) → provider adapter builds the request → send with a timeout → map the provider status to an
-outcome and an HTTP status. **Fail-closed:** only a `Continue` outcome returns `202 accepted`.
+outcome and an HTTP status. **Fail-closed:** only a `Continue` outcome returns `200 accepted`.
 
 See [`docs/CONTRACT.md`](docs/CONTRACT.md) for the full specification every implementation follows.
 
 ## Security
 
-Set **`REQUIRE_AUTH=true`** in any real deployment. The Function then validates the caller's **Entra
-JWT** (audience = `EXPECTED_AUDIENCE`, issuer tenant = `ISSUER_TENANT_ID`, signature via JWKS) and
+Set **`EPP_REQUIRE_AUTH=true`** in any real deployment. The Function then validates the caller's **Entra
+JWT** (audience = `EPP_EXPECTED_AUDIENCE`, issuer tenant = `EPP_TENANT_ID`, signature via JWKS) and
 returns **401** without a valid token. Provider secrets are read from **Key Vault** via **managed
-identity** — no keys or connection strings in code or config. Locally, keep `REQUIRE_AUTH=false`. See
+identity** — no keys or connection strings in code or config. Locally, keep `EPP_REQUIRE_AUTH=false`. See
 [docs/ONBOARDING.md §6](docs/ONBOARDING.md) for how to test it with a token.
 
 ## Docs

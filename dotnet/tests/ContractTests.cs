@@ -35,7 +35,7 @@ public class ContractTests
     [Fact]
     public void InfobipBuildsHttpsSmsRequestWithAppAuthAndCode()
     {
-        var env = new FakeEnv { ["INFOBIP_SENDER_ID"] = "CYOT" };
+        var env = new FakeEnv { ["EPP_PROVIDER_ACCOUNT_NAME"] = "CYOT" };
         var req = new InfobipProvider().BuildRequest("sms", "https://api.infobip.com",
             Disp(message: "Use verification code 918273 for Microsoft authentication."),
             new ProviderCredential("apiKey", Secret: "ib"), env);

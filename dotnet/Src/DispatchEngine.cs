@@ -61,7 +61,7 @@ public sealed class DispatchEngine
         if (shutter)
             return new DispatchResult(200, new { status = "accepted", shutterProcessed = true, provider = providerId, channel, correlationId = dispatch.CorrelationId, messageId = dispatch.MessageId, requestId });
 
-        var timeoutMs = int.TryParse(_env.Get("ENDPOINT_TIMEOUT_MS"), out var parsedTimeout) ? parsedTimeout : DefaultTimeoutMs;
+        var timeoutMs = int.TryParse(_env.Get("EPP_PROVIDER_TIMEOUT_MS"), out var parsedTimeout) ? parsedTimeout : DefaultTimeoutMs;
         HttpResponseMessage resp;
         string body;
         try
@@ -113,15 +113,9 @@ public sealed class DispatchEngine
         return new ProviderCredential("apiKey", Secret: secret, Identity: identity);
     }
 
-    // Base URL from app settings: <ID>_ENDPOINT_EUDB when EUDB=true, else <ID>_ENDPOINT.
-    private static string? ResolveEndpoint(ProviderManifest manifest, IEnv env)
-    {
-        var idUpper = manifest.Id.ToUpperInvariant();
-        var useEudb = string.Equals(env.Get("EUDB"), "true", StringComparison.OrdinalIgnoreCase);
-        var eudb = env.Get($"{idUpper}_ENDPOINT_EUDB");
-        if (useEudb && !string.IsNullOrEmpty(eudb)) return eudb;
-        return env.Get($"{idUpper}_ENDPOINT");
-    }
+    // Base URL from app settings: one provider is active per deployment, so the endpoint is a single
+    // EPP_PROVIDER_ENDPOINT rather than a per-provider key.
+    private static string? ResolveEndpoint(ProviderManifest manifest, IEnv env) => env.Get("EPP_PROVIDER_ENDPOINT");
 
     private async Task<(HttpResponseMessage, string)> SendAsync(ProviderHttpRequest req, int timeoutMs)
     {

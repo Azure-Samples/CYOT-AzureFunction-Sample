@@ -25,16 +25,17 @@ the full catalog is in [CONTRACT.md §4](CONTRACT.md).
 ## 4. Run and send a test
 
 Build/run per the language README, then `POST /api/SendOtp` with the cleartext envelope (the PII lives
-in the encrypted JWE — see [CONTRACT.md](CONTRACT.md)). A **`202`** with the echoed `nonce`
+in the encrypted JWE — see [CONTRACT.md](CONTRACT.md)). A **`200`** with the echoed `nonce`
 (`{ "nonce": "<echo>", "correlationId": "<echo>", "providerStatus": "accepted" }`) means the provider
 **queued** it — delivery is asynchronous, so confirm via the provider's delivery report.
 
-## 5. Secure it — `REQUIRE_AUTH`
+## 5. Secure it — Easy Auth
 
-Keep `REQUIRE_AUTH=false` for local development. For any real deployment, set **`REQUIRE_AUTH=true`**
-(plus `EXPECTED_AUDIENCE` and `ISSUER_TENANT_ID`). The Function then validates the caller's **Entra
-JWT** and returns **401** without a valid token. To test it, obtain a token for the expected audience
-and confirm: no token → 401, valid token → 202.
+App Service Authentication is the gate: set `unauthenticatedClientAction` to `Return401` and list
+Microsoft's application in `allowedApplications`, and anything else is rejected before your code runs.
+Where Easy Auth is not available, set **`EPP_REQUIRE_AUTH=true`** (plus `EPP_EXPECTED_AUDIENCE` and
+`EPP_TENANT_ID`) to validate the **Entra JWT** in-process instead. To test, obtain a token for the
+expected audience and confirm: no token → 401, valid token → 200.
 
 ## 6. Deploy
 

@@ -30,7 +30,7 @@ class SinchProvider:
 
         service_plan_id = env.get("SINCH_SERVICE_PLAN_ID") or ""
         body = {
-            "from": env.get("SINCH_SENDER_ID") or "Verify",
+            "from": env.get("EPP_PROVIDER_ACCOUNT_NAME") or "Verify",
             "to": [dispatch.destination],
             "body": dispatch.message,
             "client_reference": reference,

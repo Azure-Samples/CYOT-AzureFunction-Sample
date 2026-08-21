@@ -14,14 +14,14 @@ dotnet/
 │  ├─ CyotEnvelope.cs         # parse/validate the cleartext SAS → CYOT envelope
 │  ├─ DeliveryContext.cs      # JWE decrypt (RSA-OAEP-256 + A256GCM) → CyotDeliveryContext
 │  ├─ DispatchEngine.cs       # resolve provider → credential → endpoint → send → outcome
-│  ├─ ProviderRegistry.cs     # keyed adapter registry + DEFAULT_PROVIDER resolution
+│  ├─ ProviderRegistry.cs     # keyed adapter registry + EPP_PROVIDER_NAME resolution
 │  ├─ IProviderAdapter.cs     # Manifest + BuildRequest + ParseResponse
 │  ├─ Providers/*.cs          # infobip, telesign, soprano, sinch
 │  ├─ SecretResolver.cs       # Key Vault via managed identity (cached)
 │  ├─ ISecretResolver.cs      # secret-resolver abstraction (injectable for tests)
 │  ├─ OutcomeMapper.cs        # status → outcome → HTTP status
 │  ├─ Models.cs               # DispatchRequest + shared records
-│  └─ TokenValidator.cs       # Entra JWT validation when REQUIRE_AUTH=true
+│  └─ TokenValidator.cs       # Entra JWT validation when EPP_REQUIRE_AUTH=true
 └─ tests/                     # xUnit conformance tests
 ```
 

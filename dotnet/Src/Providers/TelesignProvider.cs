@@ -46,7 +46,7 @@ public sealed class TelesignProvider : IProviderAdapter
             path = "/v1/messaging";
             form["phone_number"] = dispatch.Destination;
             form["message"] = dispatch.Message ?? string.Empty;
-            form["sender_id"] = env.Get("TELESIGN_SENDER_ID") ?? string.Empty;
+            form["sender_id"] = env.Get("EPP_PROVIDER_ACCOUNT_NAME") ?? string.Empty;
             form["message_type"] = "OTP";
             form["external_id"] = externalId;
             form["is_primary"] = "true";

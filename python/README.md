@@ -14,12 +14,12 @@ python/
 ├─ src/
 │  ├─ cyot.py                 # envelope parse/validate + JWE decrypt + context → dispatch
 │  ├─ dispatch.py             # resolve provider → credential → endpoint → send → outcome
-│  ├─ registry.py             # adapter registry + DEFAULT_PROVIDER resolution
+│  ├─ registry.py             # adapter registry + EPP_PROVIDER_NAME resolution
 │  ├─ providers/*.py          # infobip, telesign, soprano, sinch (manifest + build/parse)
 │  ├─ secrets.py              # Key Vault via managed identity (cached)
 │  ├─ outcome.py              # status → outcome → HTTP status
 │  ├─ models.py               # DispatchRequest + outcome constants
-│  └─ security.py             # Entra JWT validation when REQUIRE_AUTH=true
+│  └─ security.py             # Entra JWT validation when EPP_REQUIRE_AUTH=true
 └─ tests/                     # pytest conformance tests
 ```
 

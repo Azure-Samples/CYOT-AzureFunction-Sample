@@ -47,7 +47,7 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
     const smsBase = endpoint;
     const servicePlanId = env.SINCH_SERVICE_PLAN_ID || '';
     const body = {
-        from: env.SINCH_SENDER_ID || 'Verify',
+        from: env.EPP_PROVIDER_ACCOUNT_NAME || 'Verify',
         to: [dispatch.destination],
         body: dispatch.message,
         client_reference: dispatch.correlationId || dispatch.messageId,

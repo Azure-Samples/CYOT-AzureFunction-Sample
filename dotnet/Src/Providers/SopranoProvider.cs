@@ -29,12 +29,14 @@ public sealed class SopranoProvider : IProviderAdapter
         if (credential.Mode == "oauth2") headers["Authorization"] = $"Bearer {credential.Token}";
         else { headers["X-MEMS-API-ID"] = credential.Identity ?? string.Empty; headers["X-MEMS-API-Key"] = credential.Secret ?? string.Empty; }
 
+        // Soprano wants a provisioned source endpoint (endpoints:[{type,id}]), which is numeric. A
+        // non-numeric account name is sent as a free-text source instead.
         object endpoints_or_source()
         {
-            var sourceId = env.Get("SOPRANO_SOURCE_ID");
-            if (!string.IsNullOrEmpty(sourceId))
-                return new { endpoints = new[] { new { type = int.TryParse(env.Get("SOPRANO_SOURCE_TYPE"), out var parsedSourceType) ? parsedSourceType : 1, id = int.Parse(sourceId) } } };
-            return new { source = env.Get("SOPRANO_SENDER_ID") };
+            var account = env.Get("EPP_PROVIDER_ACCOUNT_NAME");
+            if (!string.IsNullOrEmpty(account) && int.TryParse(account, out var sourceId))
+                return new { endpoints = new[] { new { type = int.TryParse(env.Get("SOPRANO_SOURCE_TYPE"), out var parsedSourceType) ? parsedSourceType : 1, id = sourceId } } };
+            return new { source = account };
         }
 
         var clientRef = dispatch.CorrelationId ?? dispatch.MessageId;

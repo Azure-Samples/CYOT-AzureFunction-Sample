@@ -21,7 +21,7 @@ public sealed class ProviderRegistry
     {
         var id = !string.IsNullOrWhiteSpace(requestProvider)
             ? requestProvider
-            : Environment.GetEnvironmentVariable("DEFAULT_PROVIDER");
+            : Environment.GetEnvironmentVariable("EPP_PROVIDER_NAME");
         return Get(id);
     }
 }

@@ -13,7 +13,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IEnv, ProcessEnv>();
 builder.Services.AddSingleton<ISecretResolver, SecretResolver>();
 builder.Services.AddSingleton<TokenValidator>();
-builder.Services.AddSingleton<IJweKeyProvider, KeyVaultJweKeyProvider>();
+builder.Services.AddSingleton<IJweKeyProvider, EnvJweKeyProvider>();
 builder.Services.AddSingleton<JweDecryptor>();
 
 // Provider adapters — add one line to onboard a provider.

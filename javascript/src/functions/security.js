@@ -23,14 +23,14 @@ function getJwks(issuerTenantId) {
 
 // Validates the inbound bearer token when REQUIRE_AUTH is enabled (issuer, audience, expiry, RS256).
 async function validateToken(request, context, requestId) {
-    if (String(process.env.REQUIRE_AUTH || 'false').toLowerCase() !== 'true') {
+    if (String(process.env.EPP_REQUIRE_AUTH || 'false').toLowerCase() !== 'true') {
         return { ok: true, skipped: true };
     }
 
-    const audience = process.env.EXPECTED_AUDIENCE;
-    const tenantId = process.env.ISSUER_TENANT_ID;
+    const audience = process.env.EPP_EXPECTED_AUDIENCE;
+    const tenantId = process.env.EPP_TENANT_ID;
     if (!audience || !tenantId) {
-        return { ok: false, reason: 'REQUIRE_AUTH is set but EXPECTED_AUDIENCE / ISSUER_TENANT_ID are missing' };
+        return { ok: false, reason: 'EPP_REQUIRE_AUTH is set but EPP_EXPECTED_AUDIENCE / EPP_TENANT_ID are missing' };
     }
 
     const authorizationHeader = (request.headers.get('authorization') || '').trim();
@@ -41,11 +41,14 @@ async function validateToken(request, context, requestId) {
 
     try {
         const { jwtVerify } = require('jose');
-        // Accept both the v2 (login.microsoftonline.com/.../v2.0) and v1 (sts.windows.net/.../) issuers.
-        const issuers = [
-            `https://login.microsoftonline.com/${tenantId}/v2.0`,
-            `https://sts.windows.net/${tenantId}/`,
-        ];
+        // Accept both the v2 (login.microsoftonline.com/.../v2.0) and v1 (sts.windows.net/.../) issuers,
+        // unless EPP_EXPECTED_ISSUER pins one explicitly.
+        const issuers = process.env.EPP_EXPECTED_ISSUER
+            ? [process.env.EPP_EXPECTED_ISSUER]
+            : [
+                `https://login.microsoftonline.com/${tenantId}/v2.0`,
+                `https://sts.windows.net/${tenantId}/`,
+            ];
         await jwtVerify(bearerToken, getJwks(tenantId), {
             audience,
             issuer: issuers,

@@ -8,10 +8,7 @@ const assert = require('node:assert');
 // Non-secret provider config (app settings, not secrets) — set before requiring the modules.
 process.env.KEY_VAULT_URL = 'https://test.vault.azure.net';
 process.env.SINCH_SERVICE_PLAN_ID = 'sp';
-process.env.INFOBIP_ENDPOINT = 'https://api.infobip.com';
-process.env.TELESIGN_ENDPOINT = 'https://rest-api.telesign.com';
-process.env.SINCH_ENDPOINT = 'https://sms.api.sinch.com';
-process.env.SOPRANO_ENDPOINT = 'https://mems.example.com/cgpapi';
+process.env.EPP_PROVIDER_ENDPOINT = 'https://api.infobip.com';
 
 // Provider secrets come from Key Vault via managed identity in production; mock getSecret here.
 const providerSecrets = {

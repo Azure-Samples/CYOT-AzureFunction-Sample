@@ -41,7 +41,7 @@ class TelesignProvider:
             form = {
                 "phone_number": dispatch.destination,
                 "message": dispatch.message or "",
-                "sender_id": env.get("TELESIGN_SENDER_ID") or "",
+                "sender_id": env.get("EPP_PROVIDER_ACCOUNT_NAME") or "",
                 "message_type": "OTP",
                 "external_id": external_id,
                 "is_primary": "true",

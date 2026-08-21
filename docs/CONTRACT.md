@@ -5,7 +5,7 @@ must conform to. If an implementation disagrees with this document, the implemen
 
 > **Naming.** "CYOT" (Choose Your Own Telecom) is the internal code name for this feature. It still
 > appears in wire-level identifiers that must not change — type names (`SendCyotOtpRequest`,
-> `CyotDeliveryContext`), the `CYOT_JWE_PRIVATE_KEY_PEM` app setting, and the caller's `User-Agent`.
+> `CyotDeliveryContext`) and the caller's `User-Agent`. App settings use the `EPP_` prefix.
 
 The design is intentionally simple: **one dispatch engine + drop-in provider adapters**. Adding a
 provider is adding one adapter file; adding a language is re-implementing this contract.
@@ -15,7 +15,7 @@ provider is adding one adapter file; adding a language is re-implementing this c
 ## 1. HTTP API
 
 **Endpoint:** `POST /api/SendOtp` (Functions HTTP trigger, `authLevel: anonymous`; trust comes from
-the Entra token when `REQUIRE_AUTH=true`). This is the interface **SAS (StrongAuthenticationService)**
+the Entra token when `EPP_REQUIRE_AUTH=true`). This is the interface **SAS (StrongAuthenticationService)**
 calls. PII (phone number + the rendered message, which contains the passcode) is **encrypted** inside a
 JWE; the cleartext envelope carries routing/scheduling only.
 
@@ -23,7 +23,7 @@ JWE; the cleartext envelope carries routing/scheduling only.
 
 | Header | Notes |
 |--------|-------|
-| `Authorization` | `Bearer <Entra token>` (audience = `EXPECTED_AUDIENCE`) |
+| `Authorization` | `Bearer <Entra token>` (audience = `EPP_EXPECTED_AUDIENCE`) |
 | `User-Agent` | e.g. `Microsoft-AzureMFA-SAS-CYOT/1.0` (logged) |
 | `x-ms-correlation-id` | sign-in correlation id (fallback for envelope `correlationId`) |
 | `x-ms-client-request-id` | per-attempt id (used as `messageId`) |
@@ -37,7 +37,7 @@ JWE; the cleartext envelope carries routing/scheduling only.
 | `correlationId` | | sign-in correlation; stitches SAS ↔ provider traces |
 | `channel` | ✅ | `CyotChannel` int: `1`=Sms, `2`=Voice (`0`=Undefined); the string forms `sms`/`voice` are also accepted |
 | `mode` | ✅ | `CyotDeliveryMode` int: `1`=Live, `2`=Evaluation (rehearsal — do **NOT** deliver); the string forms `live`/`evaluation` are also accepted |
-| `ttlSeconds` | | passcode validity remaining; a Live request with `ttlSeconds <= 0` is rejected (`400`) without dispatching |
+| `ttlSeconds` | | passcode validity remaining; `<= 0` is **logged as a warning** — the delivery still proceeds |
 | `encryptedDeliveryContext` | ✅ | JWE compact serialization (see below) |
 
 `channel` not in `{1,2}`/`{sms,voice}` → `400`. `mode` not in `{1,2}`/`{live,evaluation}` → `400`. Missing/empty `encryptedDeliveryContext` → `400`.
@@ -45,7 +45,7 @@ JWE; the cleartext envelope carries routing/scheduling only.
 ### `encryptedDeliveryContext` (JWE)
 
 Alg: **RSA-OAEP-256** (CEK wrap) + **A256GCM** (content). The JOSE protected header carries `kid`; the
-endpoint resolves the matching RSA private key (Key Vault secret, or `CYOT_JWE_PRIVATE_KEY_PEM` for
+endpoint resolves the matching RSA private key (`EPP_DECRYPTION_KEY_PEM`, a Key Vault reference) and
 local dev) and decrypts. The compact JWE must have **exactly five non-empty segments** and stay within a
 size limit; `alg`/`enc` are pinned (only `RSA-OAEP-256` + `A256GCM` accepted) and the AES-GCM auth tag is
 verified before any plaintext is used. Decrypted plaintext = `CyotDeliveryContext`:
@@ -54,7 +54,7 @@ verified before any plaintext is used. Decrypted plaintext = `CyotDeliveryContex
 |-------|----------|-------|
 | `nonce` | ✅ | value the endpoint MUST echo to prove decryption |
 | `phoneNumber` | ✅ | E.164, single canonical string |
-| `message` | ✅ | fully rendered + localized text; **contains the passcode** |
+| `message` | ✅ | fully rendered + localized text; **contains the passcode**. For `voice`, the passcode digits are spaced so TTS reads them individually |
 | `extension` | | office voice only |
 | `locale` | | selects TTS voice for the voice channel |
 | `riskContext` | | `CyotRiskContext` (scenario, familiarity flags, ip/asn/geo, ja4/ja4h, …) |
@@ -68,9 +68,9 @@ Decryption failure → `400`. Missing `nonce` / `phoneNumber` / `message` → `4
 ```
 
 `accepted`/`pending` are **not** failures (provider queued it; acceptance ≠ delivery to the handset).
-The endpoint returns **`202 Accepted`** on acceptance. On `2xx` **with a matching nonce**, SAS treats the
-send as handled. **Nonce mismatch / non-2xx / timeout → SAS falls back to native CAPP delivery.**
-`Evaluation` mode returns `202` + nonce echo without delivering.
+The endpoint returns **`200`** on acceptance (any `2xx` counts as transport acceptance). On `2xx` **with a
+matching nonce**, SAS treats the send as handled. **Nonce mismatch / non-2xx / timeout → SAS falls back
+to native CAPP delivery.** `Evaluation` mode returns `200` + nonce echo without delivering.
 
 ---
 
@@ -81,7 +81,7 @@ an HTTP status. **Fail-closed:** an unknown/unmapped status is treated as `Fail`
 
 | Outcome | HTTP | When |
 |---------|------|------|
-| `Continue` | `202` | recognized success status (engine emits `200`; the endpoint returns `202 Accepted`) |
+| `Continue` | `200` | recognized success status |
 | `Block` | `403` | provider says blocked |
 | `StepUp` | `409` | provider signals step-up / fraud escalation |
 | `Fail` | `429` | provider returned 429 |
@@ -116,17 +116,21 @@ Set by provisioning. **Identical names across all languages.**
 
 | Key | Purpose |
 |-----|---------|
-| `DEFAULT_PROVIDER` | active provider id |
-| `<ID>_ENDPOINT`, `<ID>_ENDPOINT_EUDB` | provider base URL (EUDB variant when `EUDB=true`) |
-| `EUDB` | `true` → use EU endpoints |
-| `ENDPOINT_TIMEOUT_MS` | outbound call timeout (default 1500) |
-| `KEY_VAULT_URL` | Key Vault URI |
-| `JWE_PRIVATE_KEY_SECRET` | Key Vault secret name holding the RSA private key PEM for JWE decryption (defaults to the JOSE `kid`) |
-| `CYOT_JWE_PRIVATE_KEY_PEM` | inline RSA private key PEM for local dev (bypasses Key Vault) |
-| `REQUIRE_AUTH` | `true` → enforce Entra token validation |
-| `EXPECTED_AUDIENCE`, `ISSUER_TENANT_ID` | token validation (aud + issuer tenant) |
+| `EPP_PROVIDER_NAME` | active provider id (`infobip` \| `telesign` \| `sinch` \| `soprano`) |
+| `EPP_PROVIDER_ENDPOINT` | provider base URL (one provider is active per deployment) |
+| `EPP_PROVIDER_ACCOUNT_NAME` | sender / source id presented to the provider |
+| `EPP_PROVIDER_TIMEOUT_MS` | outbound call timeout (default 1500) |
+| `EPP_PROVIDER_RETRY_INTERVAL_MS` | retry interval, reported at startup |
+| `EPP_DECRYPTION_KEY_PEM` | RSA private key for JWE decryption — PEM, or **base64 over the PEM** as the setup script writes it. A **Key Vault reference** in Azure |
+| `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
+| `EPP_REQUIRE_AUTH` | `true` → validate the Entra token in-process (Easy Auth is the primary gate) |
+| `EPP_EXPECTED_AUDIENCE` | v1 token `aud` — the identifier URI `api://{host}/{appId}` |
+| `EPP_EXPECTED_ISSUER` | v1 issuer `https://sts.windows.net/{tenantId}/` |
+| `EPP_TENANT_ID` | your Entra tenant id |
+| `EPP_EXPECTED_CLIENT_ID` | caller `appid` Easy Auth should admit — Microsoft's app `25ec60fa-f18d-41a4-b398-50044c90ce13`; a mismatch returns `403` |
+| `EPP_LOG_PLAINTEXT` | **diagnostics only** — `true` writes the phone number and passcode to the log. Never enable in production |
+| `KEY_VAULT_URL` | Key Vault URI (provider API keys) |
 | `AZURE_CLIENT_ID` | set for a user-assigned managed identity |
-| provider-specific | sender/source/voice IDs (e.g. `INFOBIP_SENDER_ID`, `SOPRANO_SOURCE_ID`) |
 
 **Secrets** (provider API keys, identity secrets like customer/api ids) live in **Key Vault**, referenced
 by name in the manifest and fetched at runtime via **managed identity** (needs the *Key Vault Secrets
@@ -136,13 +140,16 @@ User* role). Never in code or config.
 
 ## 5. Required behaviors
 
-- **Fail-closed** — only `Continue` → `202 accepted`; unknown status → `Fail`.
+- **Fail-closed** — only `Continue` → `200 accepted`; unknown status → `Fail`.
 - **Managed identity** — Key Vault access via managed identity only (user-assigned if `AZURE_CLIENT_ID`
   set, else system-assigned). No static credentials.
 - **Privacy** — the OTP code and phone number must **never** appear in logs or the response body (they
-  appear only in the outbound provider request, which is the delivery itself).
-- **Auth** — when `REQUIRE_AUTH=true`, validate the Entra JWT (audience = `EXPECTED_AUDIENCE`, issuer
-  tenant = `ISSUER_TENANT_ID`, RS256, JWKS). No-op pass-through when false (local dev).
+  appear only in the outbound provider request, which is the delivery itself). The single exception is
+  `EPP_LOG_PLAINTEXT=true`, a **diagnostics-only** switch that logs the phone number, message, and
+  passcode. It defaults to false and **must not be enabled in production**.
+- **Auth** — Easy Auth is the primary gate; `EPP_EXPECTED_CLIENT_ID` mismatches return `403`. When
+  `EPP_REQUIRE_AUTH=true`, also validate the Entra JWT in-process (audience = `EPP_EXPECTED_AUDIENCE`,
+  issuer tenant = `EPP_TENANT_ID`, RS256, JWKS). No-op pass-through when false (local dev).
 
 ---
 
@@ -159,5 +166,5 @@ Every implementation ships tests covering at least:
    `encryptedDeliveryContext`, decryption failure, and an incomplete delivery context.
 7. JWE round-trip: a context encrypted with RSA-OAEP-256 + A256GCM decrypts to the expected
    `nonce` / `phoneNumber` / `message`, and the response echoes the `nonce`.
-8. `Evaluation` mode → 202 + nonce echo, nothing sent.
+8. `Evaluation` mode → 200 + nonce echo, nothing sent.
 9. Privacy: OTP code and phone never in logs or response body.

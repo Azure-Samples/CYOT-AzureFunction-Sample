@@ -12,5 +12,5 @@ class ProviderRegistry:
         return self._by_id.get(provider_id.lower())
 
     def resolve(self, request_provider):
-        provider_id = request_provider or os.environ.get("DEFAULT_PROVIDER")
+        provider_id = request_provider or os.environ.get("EPP_PROVIDER_NAME")
         return self.get(provider_id)

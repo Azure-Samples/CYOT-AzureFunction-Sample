@@ -3,7 +3,7 @@
 // Tests for the SendOtp HTTP handler — the SAS → CYOT envelope: validation, JWE decryption round-trip,
 // the happy path (nonce echo), Evaluation mode, and auth rejection. Handlers are captured by stubbing
 // @azure/functions; the JWE is encrypted here with a throwaway RSA key that the handler decrypts via
-// CYOT_JWE_PRIVATE_KEY_PEM.
+// EPP_DECRYPTION_KEY_PEM.
 
 const { test, mock } = require('node:test');
 const assert = require('node:assert');
@@ -13,10 +13,10 @@ const { CompactEncrypt } = require('jose');
 
 // Throwaway RSA keypair: the handler decrypts with the private PEM from the environment.
 const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-process.env.CYOT_JWE_PRIVATE_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' });
+process.env.EPP_DECRYPTION_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' });
 process.env.KEY_VAULT_URL = 'https://test.vault.azure.net';
-process.env.INFOBIP_ENDPOINT = 'https://api.infobip.com';
-process.env.DEFAULT_PROVIDER = 'infobip';
+process.env.EPP_PROVIDER_ENDPOINT = 'https://api.infobip.com';
+process.env.EPP_PROVIDER_NAME = 'infobip';
 
 const { SecretClient } = require('@azure/keyvault-secrets');
 mock.method(SecretClient.prototype, 'getSecret', async () => ({ value: 'ib' }));
@@ -32,6 +32,9 @@ Module._load = function (request, parent, isMain) {
 };
 require('../src/functions/SendOtp');
 Module._load = originalLoad;
+
+// The handler answers before the provider call finishes, so tests await the send it kicked off.
+const { whenDelivered } = require('../src/functions/SendOtp');
 
 const ctx = { log() {} };
 
@@ -114,29 +117,34 @@ test('SendOtp: incomplete context (no phoneNumber) -> 400', async () => {
     assert.match(r.jsonBody.reason, /incomplete/);
 });
 
-test('SendOtp: Live with ttlSeconds <= 0 -> 400 request_expired', async () => {
-    const r = await handlers.SendOtp(makeReq(await makeEnvelope({ ttlSeconds: 0 })), ctx);
-    assert.equal(r.status, 400);
-    assert.equal(r.jsonBody.error, 'request_expired');
+test('SendOtp: Live with ttlSeconds <= 0 still delivers, but warns', async () => {
+    const lines = [];
+    const warnCtx = { log: (m) => lines.push(String(m)), warn: (m) => lines.push(String(m)), error: () => {} };
+    const r = await handlers.SendOtp(makeReq(await makeEnvelope({ ttlSeconds: 0 })), warnCtx);
+    await whenDelivered();
+    assert.equal(r.status, 200);
+    assert.ok(lines.some((l) => /has expired/.test(l)), 'expected an expiry warning');
 });
 
-test('SendOtp: valid Live envelope -> 202 accepted, nonce echoed, sent over https', async () => {
+test('SendOtp: valid Live envelope -> 200 accepted, nonce echoed, sent over https', async () => {
     sent = undefined;
     const r = await handlers.SendOtp(makeReq(await makeEnvelope()), ctx);
-    assert.equal(r.status, 202);
+    await whenDelivered();
+    assert.equal(r.status, 200);
     assert.equal(r.jsonBody.providerStatus, 'accepted');
     assert.equal(r.jsonBody.nonce, 'nonce-abc');
     assert.equal(r.jsonBody.correlationId, 'corr-1');
     assert.match(sent.url, /^https:\/\//);
 });
 
-test('SendOtp: Evaluation mode -> 202 nonce echoed, nothing sent', async () => {
+test('SendOtp: Evaluation mode -> 200 nonce echoed, nothing sent', async () => {
     let calls = 0;
     const original = global.fetch;
     global.fetch = async (...a) => { calls++; return original(...a); };
     try {
         const r = await handlers.SendOtp(makeReq(await makeEnvelope({ mode: 2 })), ctx);
-        assert.equal(r.status, 202);
+        await whenDelivered();
+        assert.equal(r.status, 200);
         assert.equal(r.jsonBody.nonce, 'nonce-abc');
         assert.equal(calls, 0);
     } finally {
@@ -145,11 +153,11 @@ test('SendOtp: Evaluation mode -> 202 nonce echoed, nothing sent', async () => {
 });
 
 test('SendOtp: REQUIRE_AUTH enabled but misconfigured -> 401', async () => {
-    process.env.REQUIRE_AUTH = 'true';
+    process.env.EPP_REQUIRE_AUTH = 'true';
     try {
         const r = await handlers.SendOtp(makeReq(await makeEnvelope(), { authorization: 'Bearer abc' }), ctx);
         assert.equal(r.status, 401);
     } finally {
-        delete process.env.REQUIRE_AUTH;
+        delete process.env.EPP_REQUIRE_AUTH;
     }
 });

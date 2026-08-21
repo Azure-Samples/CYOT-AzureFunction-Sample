@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -6,113 +7,215 @@ using Microsoft.Extensions.Logging;
 
 namespace Cyot.Otp;
 
-// HTTP trigger: POST /api/SendOtp — the SAS → CYOT delivery endpoint. Validates the Entra token, parses
-// the cleartext routing envelope, decrypts the JWE delivery context (PII lives there), dispatches to the
-// provider, and echoes the nonce to prove decryption. Privacy: phone and OTP code are never logged or
-// returned; the response body is the minimal CyotEndpointResponse.
+// HTTP trigger: POST /api/SendOtp — the SAS → External Phone Provider delivery endpoint. Validates the
+// caller, parses the cleartext routing envelope, decrypts the JWE delivery context (PII lives there),
+// dispatches to the provider, and echoes the nonce to prove decryption.
+//
+// Every line starts with [EPP], so a whole delivery can be pulled out of a noisy log with one filter:
+//   Application Insights : traces | where message startswith "[EPP]" | order by timestamp asc
 public sealed class SendOtp
 {
+    private const string Tag = "[EPP]";
+
     private readonly DispatchEngine _engine;
     private readonly TokenValidator _tokens;
     private readonly JweDecryptor _decryptor;
+    private readonly IEnv _env;
     private readonly ILogger<SendOtp> _log;
 
-    public SendOtp(DispatchEngine engine, TokenValidator tokens, JweDecryptor decryptor, ILogger<SendOtp> log)
+    public SendOtp(DispatchEngine engine, TokenValidator tokens, JweDecryptor decryptor, IEnv env, ILogger<SendOtp> log)
     {
         _engine = engine;
         _tokens = tokens;
         _decryptor = decryptor;
+        _env = env;
         _log = log;
     }
+
+    // Easy Auth has already validated the token; this only records which identity actually arrived.
+    private static string? ReadCallerAppId(HttpRequest req)
+    {
+        var encoded = req.Headers["x-ms-client-principal"].FirstOrDefault();
+        if (string.IsNullOrEmpty(encoded)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(Convert.FromBase64String(encoded));
+            if (!doc.RootElement.TryGetProperty("claims", out var claims) || claims.ValueKind != JsonValueKind.Array)
+                return null;
+            foreach (var claim in claims.EnumerateArray())
+            {
+                var type = claim.TryGetProperty("typ", out var t) ? t.GetString() : null;
+                if (type is "appid" or "azp")
+                    return claim.TryGetProperty("val", out var v) ? v.GetString() : null;
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Lifts the passcode out of the rendered sentence, purely so it is easy to eyeball in the log.
+    private static string? ExtractPasscode(string? message) =>
+        string.IsNullOrEmpty(message) ? null : Regex.Match(message, @"\b\d{4,8}\b") is { Success: true } m ? m.Value : null;
+
+    // Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
+    // ninety-five", which no user can type. Spacing the digits makes it read them one at a time.
+    private static string? SpacePasscodeForVoice(string? message) =>
+        string.IsNullOrEmpty(message) ? message : Regex.Replace(message, @"\b\d{4,8}\b", m => string.Join(" ", m.Value.ToCharArray()), RegexOptions.None);
 
     [Function("SendOtp")]
     public async Task<IActionResult> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "SendOtp")] HttpRequest req)
     {
+        var started = DateTimeOffset.UtcNow;
         var requestId = Guid.NewGuid().ToString("n");
         var clientRequestId = req.Headers["x-ms-client-request-id"].FirstOrDefault() ?? requestId;
         var headerCorrelationId = req.Headers["x-ms-correlation-id"].FirstOrDefault();
+        var logPlaintext = string.Equals(_env.Get("EPP_LOG_PLAINTEXT"), "true", StringComparison.OrdinalIgnoreCase);
+        var expectedKeyId = _env.Get("EPP_ENCRYPTION_KEY_ID");
+        var expectedClientId = _env.Get("EPP_EXPECTED_CLIENT_ID");
 
-        var auth = await _tokens.ValidateAsync(req.Headers.Authorization.FirstOrDefault());
-        if (!auth.Ok)
-        {
-            _log.LogWarning("[AUTH_ERROR] requestId={RequestId} reason={Reason}", requestId, auth.Reason);
-            return new ObjectResult(new { error = "unauthorized", reason = auth.Reason, requestId }) { StatusCode = 401 };
-        }
+        void Log(string label, object? value) => _log.LogInformation("{Tag} {Label}: {Value}", Tag, label.PadRight(18), value);
 
-        JsonElement payload;
+        _log.LogInformation("{Tag} ======== delivery received ========", Tag);
+        Log("invocation", requestId);
+
+        string? correlationId = null;
         try
         {
-            using var doc = await JsonDocument.ParseAsync(req.Body);
-            payload = doc.RootElement.Clone();
-        }
-        catch
-        {
-            _log.LogWarning("[ERROR] requestId={RequestId} invalid JSON body", requestId);
-            return new BadRequestObjectResult(new { error = "bad_request", reason = "invalid JSON body", requestId });
-        }
+            var callerAppId = ReadCallerAppId(req);
+            Log("caller appid", callerAppId ?? "none (Easy Auth off, or called directly)");
 
-        var (envelope, envelopeError) = EnvelopeParser.Parse(payload);
-        if (envelopeError is not null)
-        {
-            _log.LogWarning("[VALIDATION_ERROR] requestId={RequestId} {Reason}", requestId, envelopeError);
-            return new BadRequestObjectResult(new { error = "bad_request", reason = envelopeError, requestId });
-        }
+            if (callerAppId is not null && !string.IsNullOrEmpty(expectedClientId) && callerAppId != expectedClientId)
+            {
+                _log.LogError("{Tag} caller {Caller} is not {Expected}. Easy Auth allowedApplications is not doing its job.",
+                    Tag, callerAppId, expectedClientId);
+                return new ObjectResult(new { error = "unexpected_caller" }) { StatusCode = 403 };
+            }
 
-        var correlationId = envelope!.CorrelationId ?? headerCorrelationId ?? requestId;
+            var auth = await _tokens.ValidateAsync(req.Headers.Authorization.FirstOrDefault());
+            if (!auth.Ok)
+            {
+                _log.LogError("{Tag} token rejected: {Reason}", Tag, auth.Reason);
+                return new ObjectResult(new { error = "unauthorized", reason = auth.Reason, requestId }) { StatusCode = 401 };
+            }
 
-        CyotDeliveryContext context;
-        try
-        {
-            context = _decryptor.Decrypt(envelope.EncryptedDeliveryContext);
+            JsonElement payload;
+            try
+            {
+                using var doc = await JsonDocument.ParseAsync(req.Body);
+                payload = doc.RootElement.Clone();
+            }
+            catch
+            {
+                _log.LogError("{Tag} body is not JSON", Tag);
+                return new BadRequestObjectResult(new { error = "bad_request", reason = "invalid JSON body", requestId });
+            }
+
+            var (envelope, envelopeError) = EnvelopeParser.Parse(payload);
+            if (envelopeError is not null)
+            {
+                _log.LogError("{Tag} envelope rejected: {Reason}", Tag, envelopeError);
+                return new BadRequestObjectResult(new { error = "bad_request", reason = envelopeError, requestId });
+            }
+
+            Log("type", envelope!.Type);
+            Log("tenantId", envelope.TenantId);
+            Log("correlationId", envelope.CorrelationId);
+            Log("channel", envelope.Channel);
+            Log("mode", envelope.Mode);
+            Log("ttlSeconds", envelope.TtlSeconds);
+
+            correlationId = envelope.CorrelationId ?? headerCorrelationId ?? requestId;
+
+            // Surfaced rather than swallowed: the passcode expires before it can be used, so delivering
+            // it would only produce a failed sign-in and a support call.
+            if (envelope.TtlSeconds is <= 0)
+                _log.LogWarning("{Tag} ttlSeconds is {Ttl}; the passcode has expired.", Tag, envelope.TtlSeconds);
+
+            JweResult decrypted;
+            try
+            {
+                decrypted = _decryptor.Decrypt(envelope.EncryptedDeliveryContext);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError("{Tag} decryption failed: {Reason}", Tag, ex.Message);
+                return new ObjectResult(new { error = "decryption_failed", correlationId, requestId }) { StatusCode = 400 };
+            }
+
+            var kidMatches = string.IsNullOrEmpty(expectedKeyId) || decrypted.Kid == expectedKeyId;
+            Log("kid", $"{decrypted.Kid}{(kidMatches ? "" : " (DOES NOT match EPP_ENCRYPTION_KEY_ID)")}");
+            Log("alg / enc", $"{decrypted.Alg} / {decrypted.Enc}");
+            Log("decrypted", "OK");
+
+            var context = decrypted.Context;
+            Log("nonce", context.Nonce);
+
+            if (logPlaintext)
+            {
+                // DIAGNOSTICS ONLY — writes the phone number and passcode to the log.
+                Log("phoneNumber", context.PhoneNumber);
+                Log("extension", context.Extension ?? "(none)");
+                Log("locale", context.Locale);
+                Log("message", context.Message);
+                Log("passcode", ExtractPasscode(context.Message) ?? "(none found)");
+                Log("riskContext", context.RiskContext.HasValue ? context.RiskContext.Value.ToString() : "(none)");
+            }
+            else
+            {
+                _log.LogInformation("{Tag} plaintext suppressed (EPP_LOG_PLAINTEXT=false)", Tag);
+            }
+
+            if (string.IsNullOrEmpty(context.Nonce) || string.IsNullOrEmpty(context.PhoneNumber) || string.IsNullOrEmpty(context.Message))
+            {
+                _log.LogError("{Tag} delivery context is incomplete (nonce/phoneNumber/message)", Tag);
+                return new ObjectResult(new { error = "bad_request", reason = "incomplete delivery context", correlationId, requestId }) { StatusCode = 400 };
+            }
+
+            var evaluation = envelope.Mode == EnvelopeParser.ModeEvaluation;
+            var channel = EnvelopeParser.ChannelName(envelope.Channel)!;
+
+            var dispatch = new DispatchRequest(
+                Destination: context.PhoneNumber!,
+                Message: channel == "voice" ? SpacePasscodeForVoice(context.Message) : context.Message,
+                Channel: channel,
+                MessageId: clientRequestId,
+                CorrelationId: correlationId,
+                Locale: context.Locale);
+
+            // Microsoft allows 3.2 s for the whole call, so the provider is called after the response.
+            var deliveryCorrelationId = correlationId;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await _engine.DispatchAsync(dispatch, null, evaluation, requestId, _log);
+                    _log.LogInformation("{Tag} provider result   : httpStatus={Status} correlationId={CorrelationId}",
+                        Tag, result.HttpStatus, deliveryCorrelationId);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogError("{Tag} provider delivery failed: {Error}", Tag, ex.Message);
+                }
+            });
+
+            // Echoing the nonce is the whole contract: a 2xx without it is treated as a failed delivery
+            // and Microsoft re-sends over its own telephony, so the user gets the code twice.
+            Log("responding", $"200, nonce echoed, {(DateTimeOffset.UtcNow - started).TotalMilliseconds:F0} ms");
+            _log.LogInformation("{Tag} ======== done ========", Tag);
+
+            return new ObjectResult(new { nonce = context.Nonce, correlationId, providerStatus = "accepted" })
+                { StatusCode = 200 };
         }
         catch (Exception ex)
         {
-            _log.LogWarning("[DECRYPT_ERROR] requestId={RequestId} correlationId={CorrelationId} reason={Reason}", requestId, correlationId, ex.Message);
-            return new ObjectResult(new { error = "decryption_failed", correlationId, requestId }) { StatusCode = 400 };
-        }
-
-        if (string.IsNullOrEmpty(context.Nonce) || string.IsNullOrEmpty(context.PhoneNumber) || string.IsNullOrEmpty(context.Message))
-        {
-            _log.LogWarning("[VALIDATION_ERROR] requestId={RequestId} correlationId={CorrelationId} incomplete delivery context", requestId, correlationId);
-            return new ObjectResult(new { error = "bad_request", reason = "incomplete delivery context", correlationId, requestId }) { StatusCode = 400 };
-        }
-
-        var evaluation = envelope.Mode == EnvelopeParser.ModeEvaluation;
-        var channel = EnvelopeParser.ChannelName(envelope.Channel)!;
-
-        // Respect ttlSeconds: don't start a live delivery for an already-expired passcode (contract §7).
-        if (!evaluation && envelope.TtlSeconds is <= 0)
-        {
-            _log.LogWarning("[EXPIRED] requestId={RequestId} correlationId={CorrelationId} ttl={Ttl}", requestId, correlationId, envelope.TtlSeconds);
-            return new ObjectResult(new { error = "request_expired", correlationId, requestId }) { StatusCode = 400 };
-        }
-
-        _log.LogInformation(
-            "[SENDOTP] requestId={RequestId} caller={Caller} type={Type} tenant={Tenant} correlationId={CorrelationId} channel={Channel} mode={Mode} ttl={Ttl} phone=present message=present risk={Risk}",
-            requestId, auth.CallerObjectId ?? "n/a", envelope.Type ?? "n/a", envelope.TenantId ?? "n/a", correlationId,
-            envelope.Channel, envelope.Mode, envelope.TtlSeconds?.ToString() ?? "n/a", context.RiskContext.HasValue ? "present" : "absent");
-
-        var dispatch = new DispatchRequest(
-            Destination: context.PhoneNumber!,
-            Message: context.Message,
-            Channel: channel,
-            MessageId: clientRequestId,
-            CorrelationId: correlationId,
-            Locale: context.Locale);
-
-        try
-        {
-            var result = await _engine.DispatchAsync(dispatch, null, evaluation, requestId, _log);
-            // Contract: acceptance is 202 Accepted (async delivery); the engine signals acceptance as 200.
-            var accepted = result.HttpStatus == 200;
-            return new ObjectResult(new { nonce = context.Nonce, correlationId, providerStatus = accepted ? "accepted" : "failed" })
-                { StatusCode = accepted ? 202 : result.HttpStatus };
-        }
-        catch (Exception ex)
-        {
-            _log.LogError("[EXCEPTION] requestId={RequestId} error={Error}", requestId, ex.Message);
-            return new ObjectResult(new { nonce = context.Nonce, correlationId, providerStatus = "failed" }) { StatusCode = 500 };
+            // Verbose on purpose: this endpoint exists to diagnose onboarding.
+            _log.LogError("{Tag} FAILED after {Elapsed} ms: {Error}", Tag, (DateTimeOffset.UtcNow - started).TotalMilliseconds, ex.Message);
+            _log.LogInformation("{Tag} ======== failed ========", Tag);
+            return new ObjectResult(new { error = "delivery_failed", detail = ex.Message, correlationId }) { StatusCode = 500 };
         }
     }
 }

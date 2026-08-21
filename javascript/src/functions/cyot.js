@@ -11,7 +11,7 @@
 
 const crypto = require('crypto');
 const { compactDecrypt } = require('jose');
-const { resolveSecretValue } = require('./dispatch');
+const { readConfig } = require('./config');
 
 // CyotChannel: 1=Sms, 2=Voice (0=Undefined). CyotDeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
 const CHANNEL_BY_CODE = Object.freeze({ 1: 'sms', 2: 'voice' });
@@ -67,53 +67,67 @@ function assertWellFormedJwe(compactJwe) {
     }
 }
 
-// Reads the `kid` from the JWE protected (first) segment without decrypting.
-function readKid(compactJwe) {
+// Reads the JWE protected (first) segment without decrypting, so kid/alg/enc can be logged.
+function readProtectedHeader(compactJwe) {
     const protectedSegment = String(compactJwe).split('.')[0] || '';
-    const header = JSON.parse(Buffer.from(protectedSegment, 'base64url').toString('utf8'));
-    return header.kid || null;
+    return JSON.parse(Buffer.from(protectedSegment, 'base64url').toString('utf8'));
 }
 
-// Default key source: an inline PEM (local/dev) or a Key Vault secret (deployed). The `kid` selects the
-// secret name when JWE_PRIVATE_KEY_SECRET is not set.
-async function resolvePrivateKeyPem(kid, env) {
-    if (env.CYOT_JWE_PRIVATE_KEY_PEM) {
-        return env.CYOT_JWE_PRIVATE_KEY_PEM;
-    }
-    const secretName = env.JWE_PRIVATE_KEY_SECRET || kid;
-    if (!secretName) {
-        return '';
-    }
-    return resolveSecretValue(secretName);
+// The key is imported once and reused: doing it per delivery would add an RSA import inside the
+// response budget and turn a bad key into a failure on every call instead of one obvious first failure.
+let cachedKey;
+let cachedKeyPem;
+
+// The setup script stores the key as base64 over the PEM so its newlines survive being carried as a
+// secret and then as an app setting, so accept either form.
+function normalizePem(value) {
+    const text = String(value || '');
+    if (text.includes('-----BEGIN')) return text;
+    return Buffer.from(text, 'base64').toString('utf8');
 }
 
-// Decrypts the JWE compact serialization to the CyotDeliveryContext. `keyProvider(kid)` is injectable
-// so tests can supply a local key instead of Key Vault.
-async function decryptDeliveryContext(compactJwe, options = {}) {
-    const env = options.env || process.env;
-    assertWellFormedJwe(compactJwe);
-    const keyProvider = options.keyProvider || ((kid) => resolvePrivateKeyPem(kid, env));
-    const kid = readKid(compactJwe);
-    const pem = await keyProvider(kid);
+function loadPrivateKey(pem) {
     if (!pem) {
-        throw new Error('private key unavailable');
+        throw new Error('private key unavailable (EPP_DECRYPTION_KEY_PEM is not set)');
     }
-    const privateKey = crypto.createPrivateKey(pem);
+    if (cachedKey && cachedKeyPem === pem) {
+        return cachedKey;
+    }
+    cachedKey = crypto.createPrivateKey(normalizePem(pem));
+    cachedKeyPem = pem;
+    return cachedKey;
+}
+
+// Decrypts the JWE compact serialization. Returns the protected header (for kid/alg logging) alongside
+// the CyotDeliveryContext. `keyProvider(kid)` is injectable so tests can supply a local key.
+async function decryptDeliveryContext(compactJwe, options = {}) {
+    const config = options.config || readConfig(options.env || process.env);
+    assertWellFormedJwe(compactJwe);
+    const header = readProtectedHeader(compactJwe);
+    const pem = options.keyProvider ? await options.keyProvider(header.kid) : config.decryptionKeyPem;
+    const privateKey = loadPrivateKey(pem);
     // Pin alg/enc so a tampered header can't downgrade the crypto (contract: RSA-OAEP-256 + A256GCM).
     const { plaintext } = await compactDecrypt(compactJwe, privateKey, {
         keyManagementAlgorithms: ['RSA-OAEP-256'],
         contentEncryptionAlgorithms: ['A256GCM'],
     });
-    return JSON.parse(Buffer.from(plaintext).toString('utf8'));
+    return { header, context: JSON.parse(Buffer.from(plaintext).toString('utf8')) };
 }
 
 // Maps the decrypted context + envelope onto the engine's dispatch shape. The message is pre-rendered
 // (already contains the passcode), so there is no separate code — the fields mirror CyotDeliveryContext.
+// Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
+// ninety-five", which no user can type. Spacing the digits makes it read them one at a time.
+function spacePasscodeForVoice(message) {
+    return String(message || '').replace(/\b\d{4,8}\b/, (digits) => digits.split('').join(' '));
+}
+
 function contextToDispatch(context, envelope, messageId) {
+    const channel = CHANNEL_BY_CODE[envelope.channel];
     return {
         destination: context.phoneNumber,
-        message: context.message,
-        channel: CHANNEL_BY_CODE[envelope.channel],
+        message: channel === 'voice' ? spacePasscodeForVoice(context.message) : context.message,
+        channel,
         messageId,
         correlationId: envelope.correlationId,
         locale: context.locale || undefined,
@@ -122,7 +136,8 @@ function contextToDispatch(context, envelope, messageId) {
 
 module.exports = {
     parseEnvelope,
-    readKid,
+    readProtectedHeader,
+    loadPrivateKey,
     decryptDeliveryContext,
     contextToDispatch,
     CHANNEL_BY_CODE,

@@ -4,6 +4,7 @@ envelope, decrypts the JWE delivery context (RSA-OAEP-256 + A256GCM, key selecte
 and maps the CyotDeliveryContext onto the dispatch engine's request shape."""
 import base64
 import json
+import re
 
 from jwcrypto import jwe as jwe_module
 from jwcrypto import jwk
@@ -64,25 +65,18 @@ def parse_envelope(payload):
     }, None
 
 
-def read_kid(compact_jwe):
-    """Reads the `kid` from the JWE protected (first) segment without decrypting."""
+def read_protected_header(compact_jwe):
+    """Reads the JWE protected (first) segment without decrypting, so kid/alg/enc can be logged."""
     header_segment = compact_jwe.split(".")[0]
     header_segment += "=" * (-len(header_segment) % 4)
-    header = json.loads(base64.urlsafe_b64decode(header_segment))
-    return header.get("kid")
+    return json.loads(base64.urlsafe_b64decode(header_segment))
 
 
-def make_key_provider(env, secrets):
-    """Returns a key_provider(kid) -> PEM. Uses an inline PEM (CYOT_JWE_PRIVATE_KEY_PEM, local/dev) or a
-    Key Vault secret (name = JWE_PRIVATE_KEY_SECRET, else the `kid`)."""
-    def key_provider(kid):
-        pem = env.get("CYOT_JWE_PRIVATE_KEY_PEM")
-        if pem:
-            return pem
-        secret_name = env.get("JWE_PRIVATE_KEY_SECRET") or kid
-        if not secret_name:
-            return ""
-        return secrets.resolve(secret_name)
+def make_key_provider(env):
+    """Returns a key_provider(kid) -> PEM. The key comes from EPP_DECRYPTION_KEY_PEM, which is a Key
+    Vault reference, so the runtime only ever sees the resolved PEM."""
+    def key_provider(_kid):
+        return env.get("EPP_DECRYPTION_KEY_PEM") or ""
 
     return key_provider
 
@@ -102,18 +96,46 @@ def _assert_well_formed_jwe(compact_jwe):
         raise ValueError("malformed JWE: expected five non-empty segments")
 
 
-def decrypt_delivery_context(compact_jwe, key_provider):
-    """key_provider(kid) -> PEM string. Returns the decrypted CyotDeliveryContext dict."""
-    _assert_well_formed_jwe(compact_jwe)
-    kid = read_kid(compact_jwe)
-    pem = key_provider(kid)
+# The key is imported once and reused: doing it per delivery would add an RSA import inside the response
+# budget and turn a bad key into a failure on every call instead of one obvious first failure.
+_key_cache = {}
+
+
+def _normalize_pem(value):
+    """The setup script stores the key as base64 over the PEM so its newlines survive being carried as a
+    secret and then as an app setting, so accept either form."""
+    text = value if isinstance(value, str) else value.decode("utf-8")
+    if "-----BEGIN" in text:
+        return text
+    return base64.b64decode(text).decode("utf-8")
+
+
+def _load_private_key(pem):
     if not pem:
-        raise ValueError("private key unavailable")
-    key = jwk.JWK.from_pem(pem.encode("utf-8") if isinstance(pem, str) else pem)
+        raise ValueError("private key unavailable (EPP_DECRYPTION_KEY_PEM is not set)")
+    cached = _key_cache.get(pem)
+    if cached is None:
+        cached = jwk.JWK.from_pem(_normalize_pem(pem).encode("utf-8"))
+        _key_cache.clear()
+        _key_cache[pem] = cached
+    return cached
+
+
+def decrypt_delivery_context(compact_jwe, key_provider):
+    """key_provider(kid) -> PEM string. Returns (header, CyotDeliveryContext dict)."""
+    _assert_well_formed_jwe(compact_jwe)
+    header = read_protected_header(compact_jwe)
+    key = _load_private_key(key_provider(header.get("kid")))
     # Pin alg/enc so a tampered header can't downgrade the crypto (contract: RSA-OAEP-256 + A256GCM).
     token = jwe_module.JWE(algs=["RSA-OAEP-256", "A256GCM"])
     token.deserialize(compact_jwe, key=key)
-    return json.loads(token.payload.decode("utf-8"))
+    return header, json.loads(token.payload.decode("utf-8"))
+
+
+def _space_passcode_for_voice(message):
+    """Voice: left alone, a TTS engine reads 641895 as "six hundred forty-one thousand eight hundred
+    ninety-five", which no user can type. Spacing the digits makes it read them one at a time."""
+    return re.sub(r"\b\d{4,8}\b", lambda m: " ".join(m.group(0)), message or "", count=1)
 
 
 def context_to_dispatch(context, envelope, message_id):
@@ -121,7 +143,8 @@ def context_to_dispatch(context, envelope, message_id):
     pre-rendered (already contains the passcode), so the fields mirror CyotDeliveryContext."""
     return DispatchRequest(
         destination=context.get("phoneNumber"),
-        message=context.get("message"),
+        message=(_space_passcode_for_voice(context.get("message"))
+                 if CHANNEL_BY_CODE[envelope["channel"]] == "voice" else context.get("message")),
         channel=CHANNEL_BY_CODE[envelope["channel"]],
         message_id=message_id,
         correlation_id=envelope["correlation_id"],

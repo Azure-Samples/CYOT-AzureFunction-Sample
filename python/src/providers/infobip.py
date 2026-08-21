@@ -18,14 +18,14 @@ class InfobipProvider:
     }
 
     def build_request(self, channel, endpoint, dispatch, credential, env):
-        sender_id = env.get("INFOBIP_SENDER_ID") or "Verify"
+        sender_id = env.get("EPP_PROVIDER_ACCOUNT_NAME") or "Verify"
         authorization = f"Bearer {credential['token']}" if credential["mode"] == "oauth2" else f"App {credential['secret']}"
         headers = {"Authorization": authorization, "Content-Type": "application/json", "Accept": "application/json"}
         message_id = dispatch.correlation_id or dispatch.message_id
 
         if channel == "voice":
             body = {"messages": [{
-                "from": env.get("INFOBIP_VOICE_FROM") or sender_id,
+                "from": sender_id,
                 "destinations": [{"to": dispatch.destination, "messageId": message_id}],
                 "text": dispatch.message,
                 "language": dispatch.locale or "en",

@@ -8,7 +8,7 @@ const assert = require('node:assert');
 
 // The provider secret comes from Key Vault via managed identity in production; mock getSecret here.
 process.env.KEY_VAULT_URL = 'https://test.vault.azure.net';
-process.env.INFOBIP_ENDPOINT = 'https://api.infobip.com';
+process.env.EPP_PROVIDER_ENDPOINT = 'https://api.infobip.com';
 const { SecretClient } = require('@azure/keyvault-secrets');
 mock.method(SecretClient.prototype, 'getSecret', async () => ({ value: 'ib' }));
 

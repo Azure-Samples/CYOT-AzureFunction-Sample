@@ -67,9 +67,11 @@ public class EnvelopeTests
         var jwe = Jose.JWT.Encode(contextJson, rsa, Jose.JweAlgorithm.RSA_OAEP_256, Jose.JweEncryption.A256GCM,
             extraHeaders: new Dictionary<string, object> { ["kid"] = "test-key" });
 
-        Assert.Equal("test-key", JweDecryptor.ReadKid(jwe));
-
-        var context = new JweDecryptor(new FakeKeyProvider(rsa)).Decrypt(jwe);
+        var decrypted = new JweDecryptor(new FakeKeyProvider(rsa)).Decrypt(jwe);
+        Assert.Equal("test-key", decrypted.Kid);
+        Assert.Equal("RSA-OAEP-256", decrypted.Alg);
+        Assert.Equal("A256GCM", decrypted.Enc);
+        var context = decrypted.Context;
         Assert.Equal("nonce-1", context.Nonce);
         Assert.Equal("+14255551234", context.PhoneNumber);
         Assert.Equal("Your code is 123456", context.Message);

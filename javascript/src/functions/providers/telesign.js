@@ -54,7 +54,7 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
         params = new URLSearchParams({
             phone_number: dispatch.destination,
             message: dispatch.message,
-            sender_id: env.TELESIGN_SENDER_ID || '',
+            sender_id: env.EPP_PROVIDER_ACCOUNT_NAME || '',
             message_type: 'OTP',
             external_id: dispatch.correlationId || dispatch.messageId,
             is_primary: 'true',

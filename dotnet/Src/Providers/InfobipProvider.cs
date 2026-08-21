@@ -21,7 +21,7 @@ public sealed class InfobipProvider : IProviderAdapter
 
     public ProviderHttpRequest BuildRequest(string channel, string endpoint, DispatchRequest dispatch, ProviderCredential credential, IEnv env)
     {
-        var senderId = env.Get("INFOBIP_SENDER_ID") ?? "Verify";
+        var senderId = env.Get("EPP_PROVIDER_ACCOUNT_NAME") ?? "Verify";
         var auth = credential.Mode == "oauth2" ? $"Bearer {credential.Token}" : $"App {credential.Secret}";
         var headers = new Dictionary<string, string>
         {
@@ -39,7 +39,7 @@ public sealed class InfobipProvider : IProviderAdapter
                 {
                     new
                     {
-                        from = env.Get("INFOBIP_VOICE_FROM") ?? senderId,
+                        from = senderId,
                         destinations = new[] { new { to = dispatch.Destination, messageId } },
                         text = dispatch.Message,
                         language = dispatch.Locale ?? "en",

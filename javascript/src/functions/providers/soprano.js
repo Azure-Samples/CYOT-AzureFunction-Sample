@@ -48,10 +48,13 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
         clientReference: dispatch.correlationId || dispatch.messageId,
     };
     // Sender: a provisioned source endpoint (endpoints:[{type,id}]) is what Soprano accepts; free-text source is a fallback.
-    if (env.SOPRANO_SOURCE_ID) {
-        body.endpoints = [{ type: Number(env.SOPRANO_SOURCE_TYPE || 1), id: Number(env.SOPRANO_SOURCE_ID) }];
-    } else if (env.SOPRANO_SENDER_ID) {
-        body.source = env.SOPRANO_SENDER_ID;
+    // Soprano wants a provisioned source endpoint (endpoints:[{type,id}]), which is numeric. A
+    // non-numeric account name is sent as a free-text source instead.
+    const account = env.EPP_PROVIDER_ACCOUNT_NAME;
+    if (account && /^\d+$/.test(account)) {
+        body.endpoints = [{ type: Number(env.SOPRANO_SOURCE_TYPE || 1), id: Number(account) }];
+    } else if (account) {
+        body.source = account;
     }
     // Voice: Soprano speaks the fully-rendered message via text-to-speech. `language` must be a full
     // Nexmo voice code (e.g. en-US), not a bare `en`.

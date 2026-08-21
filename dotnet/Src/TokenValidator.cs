@@ -16,11 +16,11 @@ public sealed class TokenValidator
 
     public async Task<Result> ValidateAsync(string? authorizationHeader)
     {
-        if (!string.Equals(Environment.GetEnvironmentVariable("REQUIRE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Environment.GetEnvironmentVariable("EPP_REQUIRE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
             return new Result(true);
 
-        var audience = Environment.GetEnvironmentVariable("EXPECTED_AUDIENCE");
-        var tenantId = Environment.GetEnvironmentVariable("ISSUER_TENANT_ID");
+        var audience = Environment.GetEnvironmentVariable("EPP_EXPECTED_AUDIENCE");
+        var tenantId = Environment.GetEnvironmentVariable("EPP_TENANT_ID");
         if (string.IsNullOrEmpty(audience) || string.IsNullOrEmpty(tenantId))
             return new Result(false, "auth misconfigured");
 
@@ -35,10 +35,15 @@ public sealed class TokenValidator
         try
         {
             var config = await _configManager.GetConfigurationAsync();
+            // EPP_EXPECTED_ISSUER pins one issuer; otherwise accept both the v2 and v1 forms.
+            var pinnedIssuer = Environment.GetEnvironmentVariable("EPP_EXPECTED_ISSUER");
+            var validIssuers = string.IsNullOrEmpty(pinnedIssuer)
+                ? new[] { $"https://login.microsoftonline.com/{tenantId}/v2.0", $"https://sts.windows.net/{tenantId}/" }
+                : new[] { pinnedIssuer };
             var parameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
-                ValidIssuers = new[] { $"https://login.microsoftonline.com/{tenantId}/v2.0", $"https://sts.windows.net/{tenantId}/" },
+                ValidIssuers = validIssuers,
                 ValidateAudience = true,
                 ValidAudience = audience,
                 ValidateLifetime = true,

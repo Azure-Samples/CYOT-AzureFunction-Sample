@@ -95,7 +95,7 @@ function getProvider(providerId) {
 // The request's Provider, else the deployment's DEFAULT_PROVIDER (set by UX at provisioning). One
 // provider is active per deployment — selection is config, not routing the endpoint performs.
 function resolveProvider(requestProvider) {
-    const providerId = (requestProvider || process.env.DEFAULT_PROVIDER || '').toLowerCase();
+    const providerId = (requestProvider || process.env.EPP_PROVIDER_NAME || '').toLowerCase();
     return getProvider(providerId);
 }
 
@@ -144,7 +144,7 @@ async function warmUpSecretCache() {
     if (!process.env.KEY_VAULT_URL) {
         return;
     }
-    const providerId = (process.env.DEFAULT_PROVIDER || '').toLowerCase();
+    const providerId = (process.env.EPP_PROVIDER_NAME || '').toLowerCase();
     const providerEntry = providerId && getProvider(providerId);
     const keyVaultSecretName = providerEntry && providerEntry.manifest.auth && providerEntry.manifest.auth.keyVaultSecretName;
     if (!keyVaultSecretName) {
@@ -181,16 +181,10 @@ async function resolveProviderCredential(authConfiguration = {}, options = {}) {
 
 // ─── Endpoint & outcome mapping ──────────────────────────────────────────────────
 
-// Base URL from app settings (UX-provisioned): <ID>_ENDPOINT_EUDB when EUDB=true, else <ID>_ENDPOINT.
-// Endpoints are deployment config, never in the manifest. Undefined if unset → fails the send closed.
-function resolveEndpointBaseUrl(manifest, environmentVariables) {
-    const idUpper = manifest.id.toUpperCase();
-    const useEudb = String(environmentVariables.EUDB || '').toLowerCase() === 'true';
-    const eudbEndpoint = environmentVariables[`${idUpper}_ENDPOINT_EUDB`];
-    if (useEudb && eudbEndpoint) {
-        return eudbEndpoint;
-    }
-    return environmentVariables[`${idUpper}_ENDPOINT`];
+// Base URL from app settings (UX-provisioned): one provider is active per deployment, so the endpoint
+// is a single EPP_PROVIDER_ENDPOINT rather than a per-provider key.
+function resolveEndpointBaseUrl(environmentVariables) {
+    return environmentVariables.EPP_PROVIDER_ENDPOINT;
 }
 
 // Translates the provider's parsed status into a normalized outcome. A recognized status wins; an
@@ -285,7 +279,7 @@ async function sendViaProvider(providerEntry, dispatch, options) {
         return { httpStatus: HTTP_STATUS.BAD_GATEWAY, body: failBody(providerId, channel, 'provider credential unavailable', dispatch, requestId) };
     }
 
-    const endpointBaseUrl = resolveEndpointBaseUrl(manifest, process.env);
+    const endpointBaseUrl = resolveEndpointBaseUrl(process.env);
     if (!endpointBaseUrl) {
         writeLog(`[DISPATCH_ERROR] requestId=${requestId} provider=${providerId} channel=${channel} endpoint not configured`);
         return { httpStatus: HTTP_STATUS.BAD_GATEWAY, body: failBody(providerId, channel, 'provider endpoint not configured', dispatch, requestId) };
@@ -310,8 +304,8 @@ async function sendViaProvider(providerEntry, dispatch, options) {
         };
     }
 
-    // Endpoint timeout is a provisioned app setting (UX sets ENDPOINT_TIMEOUT_MS).
-    const timeoutMilliseconds = Number(process.env.ENDPOINT_TIMEOUT_MS) || DEFAULTS.ENDPOINT_TIMEOUT_MILLISECONDS;
+    // Endpoint timeout is a provisioned app setting (EPP_PROVIDER_TIMEOUT_MS).
+    const timeoutMilliseconds = Number(process.env.EPP_PROVIDER_TIMEOUT_MS) || DEFAULTS.ENDPOINT_TIMEOUT_MILLISECONDS;
     let providerResponse;
     try {
         providerResponse = await fetchWithTimeout(providerRequest, timeoutMilliseconds);

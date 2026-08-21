@@ -24,7 +24,7 @@ const manifest = {
 
 function buildRequest({ channel, endpoint, dispatch, credential, env }) {
     const base = endpoint;
-    const senderId = env.INFOBIP_SENDER_ID || 'Verify';
+    const senderId = env.EPP_PROVIDER_ACCOUNT_NAME || 'Verify';
     const authorization = credential.mode === 'oauth2' ? `Bearer ${credential.token}` : `App ${credential.secret}`;
     const headers = {
         Authorization: authorization,
@@ -35,7 +35,7 @@ function buildRequest({ channel, endpoint, dispatch, credential, env }) {
     if (channel === 'voice') {
         const body = {
             messages: [{
-                from: env.INFOBIP_VOICE_FROM || senderId,
+                from: senderId,
                 destinations: [{ to: dispatch.destination, messageId: dispatch.correlationId || dispatch.messageId }],
                 text: dispatch.message,
                 language: dispatch.locale || 'en',

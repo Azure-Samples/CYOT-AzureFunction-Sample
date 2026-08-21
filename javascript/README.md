@@ -9,16 +9,16 @@ provider (**Infobip**, **Telesign**, **Sinch**, or **Soprano**).
 - Provider secrets from **Azure Key Vault** (managed identity).
 - **Correlation id** propagated to the provider and echoed back.
 - **Shutter mode** — process the full path but do not send.
-- **Optional token validation** — off by default; enable with `REQUIRE_AUTH=true`.
+- **Optional in-process token validation** — off by default; enable with `EPP_REQUIRE_AUTH=true`.
 
-> Token validation exists but is **off by default** — enable it in any real deployment (`REQUIRE_AUTH=true`).
+> Token validation exists but is **off by default** — enable it in any real deployment (`EPP_REQUIRE_AUTH=true`).
 
 ## Deploy
 
 1. **Create the Key Vault** and add what the Function reads:
    - the provider **API key/token** as a **secret** (default name `infobip-api-key` — see [Configuration](#configuration)).
 2. **Grant the Function's managed identity** on that vault: **Key Vault Secrets User**.
-3. **Set the app settings** — copy [`../docs/local.settings.sample.json`](../docs/local.settings.sample.json) into `src/local.settings.json` locally; in Azure set them under **Function App → Settings → Environment variables**. At minimum set `KEY_VAULT_URL` and `DEFAULT_PROVIDER`; see [Configuration](#configuration) for the full list.
+3. **Set the app settings** — copy [`../docs/local.settings.sample.json`](../docs/local.settings.sample.json) into `src/local.settings.json` locally; in Azure set them under **Function App → Settings → Environment variables**. At minimum set `EPP_DECRYPTION_KEY_PEM`, `EPP_PROVIDER_NAME`, and `EPP_PROVIDER_ENDPOINT`; see [Configuration](#configuration) for the full list.
 4. **Publish:**
 
 ```bash
@@ -40,8 +40,8 @@ the only provider-specific parts are its **adapter** (the outbound API call) and
 
 > **Provisioning model.** The provider's authoritative parameters live in its **Security Store package
 > manifest**. At provisioning time, UX reads that manifest and sets the operational values as **app
-> settings (env properties)** on the Function — endpoint URLs (`<ID>_ENDPOINT`, `EUDB`), sender/source
-> IDs, `ENDPOINT_TIMEOUT_MS`, and the Key Vault secret references. The values baked
+> settings (env properties)** on the Function — the endpoint URL (`EPP_PROVIDER_ENDPOINT`), sender/source
+> id (`EPP_PROVIDER_ACCOUNT_NAME`), `EPP_PROVIDER_TIMEOUT_MS`, and the Key Vault secret references. The values baked
 > into `providers/<id>.js` are just **local-dev defaults**; the app settings win. Only the **adapter
 > code** (`buildRequest`/`parseResponse`) is provider-specific code — everything else is data.
 
@@ -54,34 +54,40 @@ Key Vault and can be rotated there without a redeploy.
 
 | Key | Purpose |
 |-----|---------|
-| `DEFAULT_PROVIDER` | your chosen provider: `infobip` \| `telesign` \| `sinch` \| `soprano` |
-| `KEY_VAULT_URL` | Key Vault URI (required) |
-| `EUDB` | `true` for an EU Data Boundary deployment — uses each provider's EU endpoint URL (optional) |
-| `ENDPOINT_TIMEOUT_MS` | outbound provider-call timeout in ms (default `1500`) |
-| `REQUIRE_AUTH` | `true` to enforce token validation — enable in any real deployment |
-| `EXPECTED_AUDIENCE` | token `aud` (this endpoint's app registration appId) — required when `REQUIRE_AUTH=true` |
-| `ISSUER_TENANT_ID` | customer tenant id for issuer/JWKS — required when `REQUIRE_AUTH=true` |
+| `EPP_PROVIDER_NAME` | your chosen provider: `infobip` \| `telesign` \| `sinch` \| `soprano` |
+| `EPP_PROVIDER_ENDPOINT` | provider base URL (one provider is active per deployment) |
+| `EPP_PROVIDER_ACCOUNT_NAME` | sender / source id presented to the provider |
+| `EPP_PROVIDER_TIMEOUT_MS` | outbound provider-call timeout in ms (default `1500`) |
+| `EPP_PROVIDER_RETRY_INTERVAL_MS` | retry interval in ms (reported at startup) |
+| `EPP_DECRYPTION_KEY_PEM` | RSA private key PEM for JWE decryption — a **Key Vault reference** in Azure |
+| `EPP_ENCRYPTION_KEY_ID` | expected JOSE `kid`; a mismatch is logged, not fatal |
+| `EPP_EXPECTED_CLIENT_ID` | caller `appid` Easy Auth should admit; a mismatch returns `403` |
+| `EPP_REQUIRE_AUTH` | `true` to also validate the token in-process — enable in any real deployment |
+| `EPP_EXPECTED_AUDIENCE` | token `aud` (this endpoint's app registration appId) — required when `EPP_REQUIRE_AUTH=true` |
+| `EPP_TENANT_ID` | customer tenant id for issuer/JWKS — required when `EPP_REQUIRE_AUTH=true` |
+| `EPP_EXPECTED_ISSUER` | optional; pins a single issuer instead of accepting both v1 and v2 |
+| `EPP_LOG_PLAINTEXT` | **diagnostics only** — `true` writes the phone number and passcode to the log. Never enable in production |
+| `KEY_VAULT_URL` | Key Vault URI (provider API keys) |
 
 ### Per-provider settings (set only for the provider you chose)
 
-Set `DEFAULT_PROVIDER` to your provider, then provision **only that block** — its **Key Vault secret**
-(the API key/token — the *only* secret) plus its **non-secret app settings**: the endpoint
-(`<PROVIDER>_ENDPOINT` / `_EUDB`), sender/source id, etc. Endpoints, sender ids, `KEY_VAULT_URL`, and the
-Key Vault secret **names** are all non-secret configuration; only the key/token **value** lives in Key Vault.
+Set `EPP_PROVIDER_NAME` to your provider, then provision **only that block** — its **Key Vault secret**
+(the API key/token — the *only* secret) plus the shared `EPP_PROVIDER_ENDPOINT` /
+`EPP_PROVIDER_ACCOUNT_NAME`. Endpoints, sender ids, `KEY_VAULT_URL`, and the Key Vault secret **names**
+are all non-secret configuration; only the key/token **value** lives in Key Vault.
 
 **Infobip**
 | Setting | Purpose |
 |---------|---------|
 | Key Vault secret `infobip-api-key` | API key |
-| `INFOBIP_SENDER_ID` | registered sender, app setting (default `Verify`) |
-| `INFOBIP_VOICE_FROM` | voice caller id, app setting (optional; falls back to `INFOBIP_SENDER_ID`) |
+| `INFOBIP_SENDER_ID` → `EPP_PROVIDER_ACCOUNT_NAME` | registered sender, app setting (default `Verify`) |
 
 **Telesign**
 | Setting | Purpose |
 |---------|---------|
 | Key Vault secret `telesign-api-key` | API key |
 | Key Vault secret `telesign-customer-id` | customer id (the Basic-auth username) |
-| `TELESIGN_SENDER_ID` | sender id, app setting (optional) |
+| `TELESIGN_SENDER_ID` → `EPP_PROVIDER_ACCOUNT_NAME` | sender id, app setting (optional) |
 | `TELESIGN_VOICE` | voice language/voice code for voice OTP, app setting (optional; default `f-en-US`) |
 
 **Sinch**
@@ -89,7 +95,7 @@ Key Vault secret **names** are all non-secret configuration; only the key/token 
 |---------|---------|
 | Key Vault secret `sinch-api-token` | API token |
 | `SINCH_SERVICE_PLAN_ID` | XMS service plan id, app setting |
-| `SINCH_SENDER_ID` | sender, app setting (default `Verify`) |
+| `SINCH_SENDER_ID` → `EPP_PROVIDER_ACCOUNT_NAME` | sender, app setting (default `Verify`) |
 | `SINCH_VOICE_ENDPOINT` | Sinch Voice API host, app setting (optional; default `https://calling.api.sinch.com`) |
 
 **Soprano**
@@ -97,12 +103,12 @@ Key Vault secret **names** are all non-secret configuration; only the key/token 
 |---------|---------|
 | Key Vault secret `soprano-api-key` | API key (sent as the `X-MEMS-API-Key` header) |
 | Key Vault secret `soprano-api-id` | API ID (sent as the `X-MEMS-API-ID` header) |
-| `SOPRANO_ENDPOINT` | **required** — your MEMS API base `https://<your-mems-domain>/cgpapi` (per-customer; no default) |
+| `EPP_PROVIDER_ENDPOINT` | **required** — your MEMS API base `https://<your-mems-domain>/cgpapi` (per-customer; no default) |
 | `SOPRANO_SOURCE_ID` | provisioned source/sender endpoint id, app setting — Soprano requires a provisioned sender, sent as `endpoints:[{type,id}]` |
 | `SOPRANO_SOURCE_TYPE` | provisioned source endpoint type, app setting (optional; default `1`) |
-| `SOPRANO_SENDER_ID` | optional free-text sender, used only as a fallback when `SOPRANO_SOURCE_ID` is unset |
+| `SOPRANO_SENDER_ID` → `EPP_PROVIDER_ACCOUNT_NAME` | optional free-text sender, used only as a fallback when `SOPRANO_SOURCE_ID` is unset |
 
-> Optional per-provider `<PROVIDER>_ENDPOINT` overrides the manifest URL (e.g. a sandbox host); rarely needed.
+> `EPP_PROVIDER_ENDPOINT` is the provider base URL for the one active provider (e.g. a sandbox host).
 
 ### Identity & permissions (managed identity — no static credentials)
 
@@ -112,7 +118,7 @@ The Function authenticates to Key Vault (and any other Azure resource) with its 
 |-------|------|-----|
 | The provider **secret** (or the vault) | **Key Vault Secrets User** | `get` the provider API key/token |
 
-Also use an **identity-based** `AzureWebJobsStorage` connection (managed identity) instead of a storage connection string, so the runtime holds no static secret either. All resource **names** (`KEY_VAULT_URL`, `EXPECTED_AUDIENCE`, `ISSUER_TENANT_ID`) come from app settings — nothing is hard-coded.
+Also use an **identity-based** `AzureWebJobsStorage` connection (managed identity) instead of a storage connection string, so the runtime holds no static secret either. All resource **names** (`KEY_VAULT_URL`, `EPP_EXPECTED_AUDIENCE`, `EPP_TENANT_ID`) come from app settings — nothing is hard-coded.
 
 ### Add your own provider
 
@@ -151,7 +157,7 @@ function parseResponse({ httpStatus, ok, json }) {
 module.exports = { manifest, buildRequest, parseResponse };
 ```
 
-The engine handles the rest — provider resolution, Key Vault credential fetch (via managed identity), message templating, timeout, `responseMapping` → HTTP status, and fail-closed behavior. Drop the file in, add the Key Vault secret, set `DEFAULT_PROVIDER=acme`, and it works.
+The engine handles the rest — provider resolution, Key Vault credential fetch (via managed identity), message templating, timeout, `responseMapping` → HTTP status, and fail-closed behavior. Drop the file in, add the Key Vault secret, set `EPP_PROVIDER_NAME=acme`, and it works.
 
 ## Request contract
 
@@ -167,14 +173,14 @@ PII (phone + rendered message, which contains the passcode) is encrypted in a JW
 | `encryptedDeliveryContext` | yes | JWE (RSA-OAEP-256 + A256GCM); decrypts to `{ nonce, phoneNumber, message, locale?, riskContext? }` |
 | `tenantId`, `correlationId`, `ttlSeconds` | no | routing / tracing / passcode validity |
 
-The active provider is deployment config (`DEFAULT_PROVIDER`), not a request field. The response is the
+The active provider is deployment config (`EPP_PROVIDER_NAME`), not a request field. The response is the
 `CyotEndpointResponse`: `{ "nonce": "<echo>", "correlationId": "<echo>", "providerStatus": "accepted" }`.
 A `2xx` with a matching nonce means handled; non-2xx / nonce mismatch / timeout → SAS falls back to CAPP.
 
 ## Try it
 
 The private RSA key that decrypts `encryptedDeliveryContext` is resolved from Key Vault by the JOSE `kid`
-(or `CYOT_JWE_PRIVATE_KEY_PEM` for local dev). Build the envelope with the matching public key:
+(`EPP_DECRYPTION_KEY_PEM`, a Key Vault reference). Build the envelope with the matching public key:
 
 ```bash
 curl -X POST https://<your-function-app>.azurewebsites.net/api/SendOtp \
@@ -190,7 +196,7 @@ curl -X POST https://<your-function-app>.azurewebsites.net/api/SendOtp \
     "ttlSeconds": 60,
     "encryptedDeliveryContext": "<JWE compact serialization>"
   }'
-# -> 202 { "nonce": "<echo>", "correlationId": "test-001", "providerStatus": "accepted" }
+# -> 200 { "nonce": "<echo>", "correlationId": "test-001", "providerStatus": "accepted" }
 ```
 
 Evaluation mode (`"mode": 2`) runs everything except the actual send and still echoes the nonce.

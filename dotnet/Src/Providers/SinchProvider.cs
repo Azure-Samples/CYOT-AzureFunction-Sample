@@ -49,7 +49,7 @@ public sealed class SinchProvider : IProviderAdapter
         var servicePlanId = env.Get("SINCH_SERVICE_PLAN_ID") ?? string.Empty;
         var body = new
         {
-            from = env.Get("SINCH_SENDER_ID") ?? "Verify",
+            from = env.Get("EPP_PROVIDER_ACCOUNT_NAME") ?? "Verify",
             to = new[] { dispatch.Destination },
             body = dispatch.Message,
             client_reference = reference,

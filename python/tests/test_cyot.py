@@ -7,7 +7,6 @@ from src.cyot import (
     context_to_dispatch,
     decrypt_delivery_context,
     parse_envelope,
-    read_kid,
 )
 
 # Throwaway RSA key: encrypt here, decrypt via the module using the private PEM.
@@ -60,8 +59,10 @@ def test_valid_envelope_parses():
 
 def test_jwe_round_trips_to_delivery_context():
     compact = _encrypt(_sample_context())
-    assert read_kid(compact) == "test-key"
-    context = decrypt_delivery_context(compact, _key_provider)
+    header, context = decrypt_delivery_context(compact, _key_provider)
+    assert header["kid"] == "test-key"
+    assert header["alg"] == "RSA-OAEP-256"
+    assert header["enc"] == "A256GCM"
     assert context["nonce"] == "nonce-1"
     assert context["phoneNumber"] == "+14255551234"
     assert context["message"] == "Your code is 123456"
@@ -76,3 +77,19 @@ def test_context_to_dispatch_maps_fields():
     assert dispatch.channel == "voice"
     assert dispatch.message_id == "msg-1"
     assert dispatch.correlation_id == "corr-1"
+    # Voice must read the passcode digit by digit.
+    assert "1 2 3 4 5 6" in dispatch.message
+
+
+def test_sms_message_is_left_intact():
+    envelope, _ = parse_envelope({"channel": 1, "mode": 1, "encryptedDeliveryContext": "x"})
+    dispatch = context_to_dispatch(_sample_context(), envelope, "msg-1")
+    assert dispatch.message == "Your code is 123456"
+
+
+def test_base64_wrapped_key_is_accepted():
+    """The setup script stores EPP_DECRYPTION_KEY_PEM as base64 over the PEM."""
+    import base64 as _b64
+    wrapped = _b64.b64encode(_PRIVATE_PEM.encode("utf-8")).decode("ascii")
+    _header, context = decrypt_delivery_context(_encrypt(_sample_context()), lambda _kid: wrapped)
+    assert context["nonce"] == "nonce-1"
