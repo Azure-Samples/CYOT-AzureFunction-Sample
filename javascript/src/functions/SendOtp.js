@@ -56,8 +56,8 @@ function deliverInBackground(dispatch, envelope, evaluation, config, context, re
         context,
         requestId,
     })
-        .then(({ httpStatus }) => {
-            context.log(`${TAG} provider result   : httpStatus=${httpStatus}`);
+        .then(({ httpStatus, body }) => {
+            context.log(`${TAG} provider result   : httpStatus=${httpStatus} outcome=${body.outcome || 'n/a'} providerStatus=${body.providerStatus || 'n/a'} providerMessageId=${body.providerMessageId || 'n/a'}`);
         })
         .catch((deliveryError) => {
             (context.error || context.log).call(context, `${TAG} provider delivery failed: ${deliveryError.message}`);

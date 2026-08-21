@@ -9,8 +9,6 @@
 // outcome and an HTTP status. Fail-closed: only a Continue outcome is "accepted".
 
 
-const fileSystem = require('fs');
-const path = require('path');
 const { ManagedIdentityCredential } = require('@azure/identity');
 const { SecretClient } = require('@azure/keyvault-secrets');
 
@@ -46,53 +44,29 @@ const DEFAULTS = Object.freeze({
     CHANNELS: ['sms', 'voice'],
 });
 
-const PROVIDERS_DIRECTORY = path.join(__dirname, 'providers');
 const SECRET_CACHE_TIME_TO_LIVE_MILLISECONDS = 5 * 60 * 1000; // rotated secrets picked up within this window
 
 // ─── Provider registry ───────────────────────────────────────────────────────
-// Each ./providers/<id>.js exports { manifest, buildRequest, parseResponse }. Onboarding = drop in a file.
+// Each ./providers/<id>.js exports { manifest, buildRequest, parseResponse }. Onboarding a provider is
+// a new file plus one line here — static so a broken provider fails at load, not mid-request.
 
-let providerRegistry = null;
-
-// Builds and caches the registry once (keyed by lowercased id); a malformed file is skipped, not fatal.
-function loadProviderRegistry() {
-    if (providerRegistry) {
-        return providerRegistry;
-    }
-    providerRegistry = new Map();
-
-    let providerFileNames = [];
-    try {
-        providerFileNames = fileSystem.readdirSync(PROVIDERS_DIRECTORY).filter((fileName) => fileName.endsWith('.js'));
-    } catch {
-        providerFileNames = [];
-    }
-
-    for (const fileName of providerFileNames) {
-        try {
-            // eslint-disable-next-line global-require
-            const providerModule = require(path.join(PROVIDERS_DIRECTORY, fileName));
-            const manifest = providerModule && providerModule.manifest;
-            if (!manifest || !manifest.id) {
-                continue;
-            }
-            providerRegistry.set(String(manifest.id).toLowerCase(), { manifest, adapter: providerModule });
-        } catch (error) {
-            console.warn(`[providers] skipping '${fileName}': ${error.message}`);
-        }
-    }
-
-    return providerRegistry;
-}
+const providerRegistry = new Map(
+    [
+        require('./providers/infobip'),
+        require('./providers/sinch'),
+        require('./providers/soprano'),
+        require('./providers/telesign'),
+    ].map((providerModule) => [
+        providerModule.manifest.id.toLowerCase(),
+        { manifest: providerModule.manifest, adapter: providerModule },
+    ]),
+);
 
 function getProvider(providerId) {
-    if (!providerId) {
-        return null;
-    }
-    return loadProviderRegistry().get(String(providerId).toLowerCase()) || null;
+    return providerId ? providerRegistry.get(String(providerId).toLowerCase()) || null : null;
 }
 
-// The request's Provider, else the deployment's DEFAULT_PROVIDER (set by UX at provisioning). One
+// The request's Provider, else the deployment's EPP_PROVIDER_NAME (set by UX at provisioning). One
 // provider is active per deployment — selection is config, not routing the endpoint performs.
 function resolveProvider(requestProvider) {
     const providerId = (requestProvider || process.env.EPP_PROVIDER_NAME || '').toLowerCase();
@@ -179,13 +153,7 @@ async function resolveProviderCredential(authConfiguration = {}, options = {}) {
     return { mode: 'apiKey', secret, identity };
 }
 
-// ─── Endpoint & outcome mapping ──────────────────────────────────────────────────
-
-// Base URL from app settings (UX-provisioned): one provider is active per deployment, so the endpoint
-// is a single EPP_PROVIDER_ENDPOINT rather than a per-provider key.
-function resolveEndpointBaseUrl(environmentVariables) {
-    return environmentVariables.EPP_PROVIDER_ENDPOINT;
-}
+// ─── Outcome mapping ─────────────────────────────────────────────────────────────
 
 // Translates the provider's parsed status into a normalized outcome. A recognized status wins; an
 // unknown status is fail-closed; only a status-less response trusts the HTTP result.
@@ -279,7 +247,7 @@ async function sendViaProvider(providerEntry, dispatch, options) {
         return { httpStatus: HTTP_STATUS.BAD_GATEWAY, body: failBody(providerId, channel, 'provider credential unavailable', dispatch, requestId) };
     }
 
-    const endpointBaseUrl = resolveEndpointBaseUrl(process.env);
+    const endpointBaseUrl = process.env.EPP_PROVIDER_ENDPOINT;
     if (!endpointBaseUrl) {
         writeLog(`[DISPATCH_ERROR] requestId=${requestId} provider=${providerId} channel=${channel} endpoint not configured`);
         return { httpStatus: HTTP_STATUS.BAD_GATEWAY, body: failBody(providerId, channel, 'provider endpoint not configured', dispatch, requestId) };
