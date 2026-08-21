@@ -11,9 +11,7 @@ dotnet/
 ├─ Program.cs                 # host + DI registration (add one line to onboard a provider)
 ├─ Functions/SendOtp.cs       # HTTP trigger: POST /api/SendOtp
 ├─ Src/
-│  ├─ CyotEnvelope.cs         # parse/validate the cleartext SAS → CYOT envelope
-│  ├─ DeliveryContext.cs      # JWE decrypt (RSA-OAEP-256 + A256GCM) → CyotDeliveryContext
-│  ├─ DispatchEngine.cs       # resolve provider → credential → endpoint → send → outcome
+│  ├─ DispatchEngine.cs       # envelope parse → JWE decrypt → provider dispatch
 │  ├─ ProviderRegistry.cs     # keyed adapter registry + EPP_PROVIDER_NAME resolution
 │  ├─ IProviderAdapter.cs     # Manifest + BuildRequest + ParseResponse
 │  ├─ Providers/*.cs          # infobip, telesign, soprano, sinch

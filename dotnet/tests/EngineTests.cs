@@ -1,11 +1,11 @@
 using System.Net;
 using System.Text;
-using Cyot.Otp;
-using Cyot.Otp.Providers;
+using Epp.Otp;
+using Epp.Otp.Providers;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace Cyot.Otp.Tests;
+namespace Epp.Otp.Tests;
 
 // Engine-level conformance tests (CONTRACT.md §6) with a fake Key Vault, HTTP client, and env.
 public class EngineTests

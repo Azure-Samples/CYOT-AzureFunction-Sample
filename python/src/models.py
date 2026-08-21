@@ -1,4 +1,4 @@
-"""Shared contract types for the CYOT OTP engine (see /docs/CONTRACT.md)."""
+"""Shared contract types for the EPP OTP engine (see /docs/CONTRACT.md)."""
 from dataclasses import dataclass
 
 # Outcomes (mirrors the other languages).

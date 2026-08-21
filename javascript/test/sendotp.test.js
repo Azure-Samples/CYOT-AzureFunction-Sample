@@ -1,6 +1,6 @@
 'use strict';
 
-// Tests for the SendOtp HTTP handler — the SAS → CYOT envelope: validation, JWE decryption round-trip,
+// Tests for the SendOtp HTTP handler — the SAS → EPP envelope: validation, JWE decryption round-trip,
 // the happy path (nonce echo), Evaluation mode, and auth rejection. Handlers are captured by stubbing
 // @azure/functions; the JWE is encrypted here with a throwaway RSA key that the handler decrypts via
 // EPP_DECRYPTION_KEY_PEM.

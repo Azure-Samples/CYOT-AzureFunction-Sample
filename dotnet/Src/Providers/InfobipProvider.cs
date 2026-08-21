@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Cyot.Otp.Providers;
+namespace Epp.Otp.Providers;
 
 // Infobip: SMS via /sms/3/messages, voice via /tts/3/advanced. Auth: App API key.
 public sealed class InfobipProvider : IProviderAdapter

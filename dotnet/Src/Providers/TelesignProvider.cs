@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace Cyot.Otp.Providers;
+namespace Epp.Otp.Providers;
 
 // Telesign: SMS via /v1/messaging, voice via /v1/voice (form-urlencoded). Auth: HTTP Basic (customer_id:api_key).
 public sealed class TelesignProvider : IProviderAdapter

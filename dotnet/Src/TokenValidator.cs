@@ -3,7 +3,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // Validates the Entra JWT when REQUIRE_AUTH=true (aud=EXPECTED_AUDIENCE, issuer tenant=ISSUER_TENANT_ID,
 // RS256 via JWKS). No-op pass-through when REQUIRE_AUTH is not "true".

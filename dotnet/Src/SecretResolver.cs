@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // Resolves Key Vault secret names to values via the Function's managed identity (user-assigned when
 // AZURE_CLIENT_ID is set, else system-assigned), cached briefly so rotations are picked up.

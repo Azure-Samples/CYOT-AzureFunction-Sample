@@ -1,7 +1,7 @@
 {
-  "name": "cyot-poc",
+  "name": "epp-otp-sample",
   "version": "1.0.0",
-  "description": "CYOT delivery endpoint - send OTP via Infobip, Telesign, Sinch, or Soprano",
+  "description": "External Phone Provider delivery endpoint - send OTP via Infobip, Telesign, Sinch, or Soprano",
   "main": "src/functions/*.js",
   "scripts": {
     "start": "func start",

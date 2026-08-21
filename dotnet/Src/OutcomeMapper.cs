@@ -1,4 +1,4 @@
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // Maps a provider's parsed status to a normalized outcome, then to an HTTP status. Fail-closed:
 // an unknown/unmapped status is treated as Fail.

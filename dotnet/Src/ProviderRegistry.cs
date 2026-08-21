@@ -1,4 +1,4 @@
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // Registry of provider adapters (keyed by lowercased id), and resolution of the active provider:
 // the request's Provider, else the deployment's EPP_PROVIDER_NAME. One provider active per deployment.

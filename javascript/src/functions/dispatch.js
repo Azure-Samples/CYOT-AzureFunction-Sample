@@ -17,8 +17,8 @@ const { SecretClient } = require('@azure/keyvault-secrets');
 const { readConfig } = require('./config');
 
 // ─── SAS envelope ────────────────────────────────────────────────────────────
-// SAS sends a cleartext routing envelope (SendCyotOtpRequest) whose PII (phone + rendered message,
-// which contains the passcode) is encrypted in a JWE.
+// The cleartext routing envelope (SendCyotOtpRequest on the wire) whose PII — phone + rendered
+// message, which contains the passcode — is encrypted in a JWE.
 
 // CyotChannel: 1=Sms, 2=Voice (0=Undefined). CyotDeliveryMode: 1=Live, 2=Evaluation (do NOT deliver).
 const CHANNEL_BY_CODE = Object.freeze({ 1: 'sms', 2: 'voice' });

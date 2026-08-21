@@ -1,9 +1,9 @@
 using System.Text.Json;
-using Cyot.Otp;
-using Cyot.Otp.Providers;
+using Epp.Otp;
+using Epp.Otp.Providers;
 using Xunit;
 
-namespace Cyot.Otp.Tests;
+namespace Epp.Otp.Tests;
 
 // Conformance tests for the pure contract logic (see /docs/CONTRACT.md §6).
 public class ContractTests
@@ -52,7 +52,7 @@ public class ContractTests
     [Fact]
     public void InfobipBuildsHttpsSmsRequestWithAppAuthAndCode()
     {
-        var env = new FakeEnv { ["EPP_PROVIDER_ACCOUNT_NAME"] = "CYOT" };
+        var env = new FakeEnv { ["EPP_PROVIDER_ACCOUNT_NAME"] = "EPP" };
         var req = new InfobipProvider().BuildRequest("sms", "https://api.infobip.com",
             Disp(message: "Use verification code 918273 for Microsoft authentication."),
             new ProviderCredential("apiKey", Secret: "ib"), env);

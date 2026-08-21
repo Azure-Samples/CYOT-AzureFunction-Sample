@@ -15,14 +15,14 @@ import uuid
 
 import azure.functions as func
 
-from src.cyot import (
+from src.dispatch import (
     MODE_EVALUATION,
+    DispatchEngine,
     context_to_dispatch,
     decrypt_delivery_context,
     make_key_provider,
     parse_envelope,
 )
-from src.dispatch import DispatchEngine
 from src.providers.infobip import InfobipProvider
 from src.providers.sinch import SinchProvider
 from src.providers.soprano import SopranoProvider

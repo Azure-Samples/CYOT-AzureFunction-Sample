@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Cyot.Otp;
+using Epp.Otp;
 using Xunit;
 
-namespace Cyot.Otp.Tests;
+namespace Epp.Otp.Tests;
 
 // Envelope validation + JWE decryption round-trip (see docs/CONTRACT.md §1, §6).
 public class EnvelopeTests

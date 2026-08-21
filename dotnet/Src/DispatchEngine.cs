@@ -1,11 +1,165 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
-// Core engine: resolve provider -> credential (Key Vault) -> endpoint -> adapter builds request ->
-// send with a timeout -> map status to outcome + HTTP status. Fail-closed.
+// The delivery pipeline, in request order: parse the cleartext SAS envelope, decrypt the JWE delivery
+// context that carries the PII, then dispatch to the bound provider. Fail-closed.
+
+// The cleartext SAS routing envelope. PII lives in the encrypted JWE.
+public sealed record Envelope(
+    string? Type,
+    string? TenantId,
+    string? CorrelationId,
+    int Channel,
+    int Mode,
+    int? TtlSeconds,
+    string EncryptedDeliveryContext);
+
+public static class EnvelopeParser
+{
+    public const int ModeLive = 1;
+    public const int ModeEvaluation = 2;
+
+    private static readonly Dictionary<int, string> ChannelByCode = new() { [1] = "sms", [2] = "voice" };
+    private static readonly Dictionary<string, int> ChannelByName = new(StringComparer.OrdinalIgnoreCase) { ["sms"] = 1, ["voice"] = 2 };
+    private static readonly Dictionary<string, int> ModeByName = new(StringComparer.OrdinalIgnoreCase) { ["live"] = ModeLive, ["evaluation"] = ModeEvaluation };
+
+    public static string? ChannelName(int code) => ChannelByCode.TryGetValue(code, out var name) ? name : null;
+
+    public static (Envelope? Envelope, string? Error) Parse(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object)
+            return (null, "invalid envelope");
+
+        string? String(string name) =>
+            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        int? Int(string name) =>
+            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : null;
+
+        // channel/mode accept the int enum (1/2) or the string form ("sms"/"voice", "live"/"evaluation").
+        int? Channel()
+        {
+            var code = Int("channel");
+            if (code is not null) return ChannelByCode.ContainsKey(code.Value) ? code : null;
+            var name = String("channel");
+            return name is not null && ChannelByName.TryGetValue(name, out var mapped) ? mapped : null;
+        }
+        int? Mode()
+        {
+            var code = Int("mode");
+            if (code is not null) return code is ModeLive or ModeEvaluation ? code : null;
+            var name = String("mode");
+            return name is not null && ModeByName.TryGetValue(name, out var mapped) ? mapped : null;
+        }
+
+        var encrypted = String("encryptedDeliveryContext");
+        if (string.IsNullOrEmpty(encrypted))
+            return (null, "encryptedDeliveryContext is required");
+
+        var channel = Channel();
+        if (channel is null)
+            return (null, "unsupported channel");
+
+        var mode = Mode();
+        if (mode is null)
+            return (null, "unsupported mode");
+
+        return (new Envelope(String("type"), String("tenantId"), String("correlationId"),
+            channel.Value, mode.Value, Int("ttlSeconds"), encrypted), null);
+    }
+}
+
+// Decrypted JWE plaintext. Contains the PII: phone + the rendered message, which includes the passcode.
+public sealed class DeliveryContext
+{
+    [JsonPropertyName("nonce")] public string? Nonce { get; set; }
+    [JsonPropertyName("phoneNumber")] public string? PhoneNumber { get; set; }
+    [JsonPropertyName("extension")] public string? Extension { get; set; }
+    [JsonPropertyName("locale")] public string? Locale { get; set; }
+    [JsonPropertyName("message")] public string? Message { get; set; }
+    [JsonPropertyName("riskContext")] public JsonElement? RiskContext { get; set; }
+}
+
+public sealed record JweResult(string? Kid, string? Alg, string? Enc, DeliveryContext Context);
+
+// Injectable so tests use a local key.
+public interface IJweKeyProvider
+{
+    RSA GetPrivateKey(string? kid);
+}
+
+public sealed class JweDecryptor
+{
+    private const int MaxJweLength = 16384;
+    private readonly IJweKeyProvider _keys;
+
+    public JweDecryptor(IJweKeyProvider keys) => _keys = keys;
+
+    public JweResult Decrypt(string compactJwe)
+    {
+        AssertWellFormed(compactJwe);
+        var headers = Jose.JWT.Headers(compactJwe);
+        var kid = headers.TryGetValue("kid", out var kidValue) ? kidValue?.ToString() : null;
+        var alg = headers.TryGetValue("alg", out var algValue) ? algValue?.ToString() : null;
+        var enc = headers.TryGetValue("enc", out var encValue) ? encValue?.ToString() : null;
+        var rsa = _keys.GetPrivateKey(kid);
+        // Pin alg/enc so a tampered header can't downgrade the crypto.
+        var plaintext = Jose.JWT.Decrypt(compactJwe, rsa, Jose.JweAlgorithm.RSA_OAEP_256, Jose.JweEncryption.A256GCM);
+        var context = JsonSerializer.Deserialize<DeliveryContext>(plaintext) ?? new DeliveryContext();
+        return new JweResult(kid, alg, enc, context);
+    }
+
+    private static void AssertWellFormed(string compactJwe)
+    {
+        // Reject oversized or malformed input before base64-decoding or allocating buffers.
+        if (string.IsNullOrEmpty(compactJwe))
+            throw new InvalidOperationException("malformed JWE");
+        if (compactJwe.Length > MaxJweLength)
+            throw new InvalidOperationException("delivery context exceeds size limit");
+        var segments = compactJwe.Split('.');
+        if (segments.Length != 5 || Array.Exists(segments, string.IsNullOrEmpty))
+            throw new InvalidOperationException("malformed JWE: expected five non-empty segments");
+    }
+}
+
+// EPP_DECRYPTION_KEY_PEM is a Key Vault reference, so the runtime only ever sees the resolved PEM.
+// Imported once, because doing it per delivery would add an RSA import inside the response budget and
+// turn a bad key into a failure on every call.
+public sealed class EnvJweKeyProvider : IJweKeyProvider
+{
+    private readonly IEnv _env;
+    private RSA? _cached;
+    private string? _cachedPem;
+
+    public EnvJweKeyProvider(IEnv env) => _env = env;
+
+    public RSA GetPrivateKey(string? kid)
+    {
+        var pem = _env.Get("EPP_DECRYPTION_KEY_PEM");
+        if (string.IsNullOrEmpty(pem))
+            throw new InvalidOperationException("private key unavailable (EPP_DECRYPTION_KEY_PEM is not set)");
+
+        if (_cached is not null && _cachedPem == pem) return _cached;
+
+        var rsa = RSA.Create();
+        rsa.ImportFromPem(NormalizePem(pem));
+        _cached = rsa;
+        _cachedPem = pem;
+        return rsa;
+    }
+
+    // The setup script stores the key as base64 over the PEM so its newlines survive being carried as a
+    // secret and then as an app setting, so accept either form.
+    private static string NormalizePem(string value) =>
+        value.Contains("-----BEGIN", StringComparison.Ordinal)
+            ? value
+            : Encoding.UTF8.GetString(Convert.FromBase64String(value.Trim()));
+}
+
 public sealed class DispatchEngine
 {
     private const int DefaultTimeoutMs = 1500;

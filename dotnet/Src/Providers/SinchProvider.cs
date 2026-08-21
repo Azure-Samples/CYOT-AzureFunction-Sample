@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Cyot.Otp.Providers;
+namespace Epp.Otp.Providers;
 
 // Sinch: SMS via XMS Batches (POST /xms/v1/{plan}/batches, Bearer). Voice via Calling TTS callout.
 public sealed class SinchProvider : IProviderAdapter

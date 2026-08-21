@@ -12,8 +12,7 @@ python/
 ├─ function_app.py            # HTTP trigger: POST /api/SendOtp (v2 model)
 ├─ requirements.txt
 ├─ src/
-│  ├─ cyot.py                 # envelope parse/validate + JWE decrypt + context → dispatch
-│  ├─ dispatch.py             # resolve provider → credential → endpoint → send → outcome
+│  ├─ dispatch.py             # envelope parse → JWE decrypt → provider dispatch
 │  ├─ registry.py             # adapter registry + EPP_PROVIDER_NAME resolution
 │  ├─ providers/*.py          # infobip, telesign, soprano, sinch (manifest + build/parse)
 │  ├─ secrets.py              # Key Vault via managed identity (cached)

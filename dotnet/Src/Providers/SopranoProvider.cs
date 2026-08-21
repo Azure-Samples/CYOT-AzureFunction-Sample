@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Cyot.Otp.Providers;
+namespace Epp.Otp.Providers;
 
 // Soprano Connect (MEMS): POST {base}/messages/{sms|voice}. Auth: X-MEMS-API-ID + X-MEMS-API-Key.
 public sealed class SopranoProvider : IProviderAdapter

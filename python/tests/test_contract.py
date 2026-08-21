@@ -30,7 +30,7 @@ def test_outcome_and_http_status():
 
 
 def test_infobip_builds_https_sms_request():
-    env = {"INFOBIP_SENDER_ID": "CYOT"}
+    env = {"INFOBIP_SENDER_ID": "EPP"}
     request = InfobipProvider().build_request(
         "sms", "https://api.infobip.com",
         _dispatch(message="Use verification code 918273 for Microsoft authentication."),

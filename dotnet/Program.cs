@@ -1,5 +1,5 @@
-using Cyot.Otp;
-using Cyot.Otp.Providers;
+using Epp.Otp;
+using Epp.Otp.Providers;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.DependencyInjection;

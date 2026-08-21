@@ -3,7 +3,7 @@ import json
 
 from jwcrypto import jwe, jwk
 
-from src.cyot import (
+from src.dispatch import (
     context_to_dispatch,
     decrypt_delivery_context,
     parse_envelope,

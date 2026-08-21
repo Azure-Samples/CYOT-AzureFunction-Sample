@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // Language-agnostic contract types (see /docs/CONTRACT.md).
 

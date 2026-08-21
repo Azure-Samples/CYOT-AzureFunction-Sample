@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
-namespace Cyot.Otp;
+namespace Epp.Otp;
 
 // HTTP trigger: POST /api/SendOtp — the SAS → External Phone Provider delivery endpoint. Validates the
 // caller, parses the cleartext routing envelope, decrypts the JWE delivery context (PII lives there),
